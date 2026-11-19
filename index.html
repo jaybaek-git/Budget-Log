@@ -112,6 +112,9 @@ svg text{font-family:inherit}
 </style>
 </head>
 <body>
+<div id="errbox" style="display:none;position:fixed;left:8px;right:8px;top:calc(env(safe-area-inset-top) + 60px);z-index:99;background:#e5484d;color:#fff;padding:10px;border-radius:10px;font-size:13px;white-space:pre-wrap"></div>
+<script>window.addEventListener('error',e=>{const b=document.getElementById('errbox');b.style.display='block';b.textContent+='⚠️ 오류: '+e.message+' ('+(e.lineno||'')+')\n'});
+window.addEventListener('unhandledrejection',e=>{const b=document.getElementById('errbox');b.style.display='block';b.textContent+='⚠️ 오류: '+(e.reason&&e.reason.message||e.reason)+'\n'});</script>
 <div class="topbar">
  <header><h1 id="title">가계부</h1><button class="hb" onclick="refresh(true)" aria-label="새로고침">⟳</button><div class="sync"><span class="dot" id="dot"></span><span id="synctxt">로컬</span></div></header>
  <div class="mnav"><button onclick="moveMonth(-1)">◀</button><div class="mt" id="mtitle"></div><button id="nowB" class="now" onclick="goNow()">이번 달</button><button onclick="moveMonth(1)">▶</button></div>
@@ -123,7 +126,7 @@ svg text{font-family:inherit}
 <div id="panel"></div>
 <div id="toast"></div>
 <script>
-const APP_VERSION='v1.0';
+const APP_VERSION='v1.0.1';
 const DEFAULT_CATS=[
  {id:'food',emoji:'🍚',name:'식비',color:'#FF9F43',kind:'out'},
  {id:'cafe',emoji:'☕',name:'카페·간식',color:'#C08457',kind:'out'},

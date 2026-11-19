@@ -1,7 +1,7 @@
 # 가계부(Budget-Log) 인수인계 메모
 
 > 새 대화에서: "jaybaek-git/Budget-Log 의 HANDOFF.md 먼저 읽고 시작해 줘"
-> 마지막 버전: **v1.0** (2026-11-19) — Baby-Log 구조를 그대로 따라 만듦
+> 마지막 버전: **v1.0.1** (2026-11-19) — Baby-Log 구조를 그대로 따라 만듦
 
 ## 1. 무엇
 - 부부 공유 가계부 웹앱 (PWA). https://jaybaek-git.github.io/Budget-Log/ (GitHub Pages, `main` 루트)
