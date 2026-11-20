@@ -147,7 +147,7 @@ window.addEventListener('unhandledrejection',e=>{const b=document.getElementById
 <div id="panel"></div>
 <div id="toast"></div>
 <script>
-const APP_VERSION='v1.3.2';
+const APP_VERSION='v1.3.3';
 const DEFAULT_CATS=[
  {"id": "food", "emoji": "🍽️", "name": "식비", "color": "#5CC88A", "kind": "out", "subs": ["외식", "배달", "장보기", "카페·간식", "술"]},
  {"id": "daily", "emoji": "🛒", "name": "생필품", "color": "#EE8F5A", "kind": "out", "subs": ["마트", "생활용품", "온라인쇼핑"]},
@@ -229,6 +229,7 @@ async function refresh(manual){
  try{if(manual&&remote())await loadConfig();
   const from=addM(view,-5),to=addM(view,1);txs=await store.list(from,to);
   if(sameM(view,new Date()))LS.set('bg_cache',txs);
+  updateRank();
   if(remote()){[fixeds,logs,monthTotals]=await Promise.all([rpc('list_fixed',{p_code:dev.code}),rpc('recent_log',{p_code:dev.code,p_limit:40}).catch(()=>[]),rpc('month_totals',{p_code:dev.code}).catch(()=>[])]);monthTotals=monthTotals||[];fixeds=fixeds||[];logs=logs||[];setSync('ok')}else setSync('local');
   if(manual)toast('새로고침 완료')}
  catch(e){setSync('err',e.message);if(manual)alert('불러오기 실패: '+e.message)}
@@ -287,9 +288,15 @@ function renderSum(){const m=monthTx(view),out=sumK(m,'out'),inn=sumK(m,'in'),B=
   el.append(bar,h('div',{class:'bmsg'},msg))}
  else el.append(h('div',{class:'bmsg',style:'margin-top:6px'},'설정 → 월 예산을 넣으면 남은 금액과 하루 사용 가능액이 보여요'));
  $('#sum').replaceChildren(el)}
+// 첫 화면 카테고리 버튼: 최근 60일 자주 쓴 순 (최근일수록 가중치, 고정지출 자동 기록 제외)
+function updateRank(){const now=Date.now(),sc={};let seen=false;
+ txs.forEach(x=>{const age=(now-new Date(x.at))/864e5;if(age<0||age>60||x.fixed_id)return;seen=true;sc[x.cat]=(sc[x.cat]||0)+Math.exp(-age/30)});
+ if(seen||sameM(view,new Date()))LS.set('bg_rank',sc)}
+function rankCats(list){if(LS.get('bg_sort',true)===false)return list;const sc=LS.get('bg_rank',{});
+ return list.map((c,i)=>({c,i,v:sc[c.id]||0})).sort((a,b)=>b.v-a.v||a.i-b.i).map(x=>x.c)}
 function renderCats(){document.querySelectorAll('#kseg button').forEach(b=>b.className=b.dataset.k===kindSel?'a '+(kindSel==='out'?'o':'i'):'');
  const m=monthTx(view);$('#cats').className='cats'+(kindSel==='in'?' in':'');
- $('#cats').replaceChildren(...visCats(kindSel).map(c=>{const s=m.filter(x=>x.cat===c.id).reduce((a,x)=>a+ +x.amount,0);
+ $('#cats').replaceChildren(...rankCats(visCats(kindSel)).map(c=>{const s=m.filter(x=>x.cat===c.id).reduce((a,x)=>a+ +x.amount,0);
   return h('button',{class:'cb',style:`--c:${c.color}`,onclick:()=>openTx({cat:c.id,kind:kindSel})},h('span',{class:'e'},c.emoji),h('span',{class:'n'},c.name),h('span',{class:'s'},s?short(s):'·'))}))}
 function renderTab(){document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('a',b.dataset.t===tab));
  const p=$('#panel');p.replaceChildren();({list:renderList,stats:renderStats,cal:renderCal,settings:renderSettings})[tab](p)}
@@ -540,7 +547,7 @@ function renderSettings(p){
   h('div',{class:'hint'},'알림은 사파리 → 공유 → "홈 화면에 추가"로 설치한 앱에서만 돼요 (iOS 16.4 이상).')));
  // 화면/데이터
  const th=LS.get('bg_theme','dark');
- p.append(sec('화면',h('div',{class:'chips'},[['dark','🌙 다크'],['light','☀️ 라이트'],['auto','자동']].map(([k,l])=>h('button',{class:'chip'+(th===k?' on':''),onclick:()=>{LS.set('bg_theme',k);applyTheme();renderTab()}},l))),
+ p.append(sec('화면',h('label',{class:'tgl'},h('input',{type:'checkbox',checked:LS.get('bg_sort',true)!==false,onchange:e=>{LS.set('bg_sort',e.target.checked);renderCats();toast(e.target.checked?'자주 쓴 순서로 정렬':'카테고리 설정 순서로')}}),'첫 화면 카테고리 버튼을 최근 60일 자주 쓴 순서로 (이 폰만)'),h('div',{class:'chips'},[['dark','🌙 다크'],['light','☀️ 라이트'],['auto','자동']].map(([k,l])=>h('button',{class:'chip'+(th===k?' on':''),onclick:()=>{LS.set('bg_theme',k);applyTheme();renderTab()}},l))),
   h('button',{class:'btn w',onclick:async()=>{const v=prompt('앱 제목',config.title);if(v&&v.trim()){config.title=v.trim();try{await saveConfig()}catch(e){alert(e.message)}renderAll()}}},`제목 바꾸기 (${config.title})`)));
  if(remote())p.append(backupSec());
  p.append(sec('데이터',h('button',{class:'btn w',onclick:exportCsv},'📤 최근 6개월 CSV 내보내기 (엑셀)'),h('div',{class:'hint'},'보고 있는 달 기준 최근 6개월 내역을 엑셀에서 열 수 있는 CSV로 저장해요.')));
