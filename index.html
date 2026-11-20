@@ -151,7 +151,7 @@ window.addEventListener('unhandledrejection',e=>{const b=document.getElementById
 </div><div id="pgL" class="pv"></div><div id="pgR" class="pv"></div></div>
 <div id="toast"></div>
 <script>
-const APP_VERSION='v1.3.6';
+const APP_VERSION='v1.3.7';
 const DEFAULT_CATS=[
  {"id": "food", "emoji": "🍽️", "name": "식비", "color": "#5CC88A", "kind": "out", "subs": ["외식", "배달", "장보기", "카페·간식", "술"]},
  {"id": "daily", "emoji": "🛒", "name": "생필품", "color": "#EE8F5A", "kind": "out", "subs": ["마트", "생활용품", "온라인쇼핑"]},
@@ -297,9 +297,10 @@ function renderSum(){const m=monthTx(view),out=sumK(m,'out'),inn=sumK(m,'in'),B=
  else el.append(h('div',{class:'bmsg',style:'margin-top:6px'},'설정 → 월 예산을 넣으면 남은 금액과 하루 사용 가능액이 보여요'));
  $('#sum').replaceChildren(el)}
 // 첫 화면 카테고리 버튼: 최근 60일 자주 쓴 순 (최근일수록 가중치, 고정지출 자동 기록 제외)
-function updateRank(){const now=Date.now(),sc={};let seen=false;
+function updateRank(){if(!sameM(view,new Date()))return;  // 이번 달을 볼 때(최근 60일이 다 불러와져 있을 때)만 순서 계산 → 다른 달을 봐도 버튼 위치 고정
+ const now=Date.now(),sc={};let seen=false;
  txs.forEach(x=>{const age=(now-new Date(x.at))/864e5;if(age<0||age>60||x.fixed_id)return;seen=true;sc[x.cat]=(sc[x.cat]||0)+Math.exp(-age/30)});
- if(seen||sameM(view,new Date()))LS.set('bg_rank',sc)}
+ LS.set('bg_rank',sc)}
 function rankCats(list){if(LS.get('bg_sort',true)===false)return list;const sc=LS.get('bg_rank',{});
  return list.map((c,i)=>({c,i,v:sc[c.id]||0})).sort((a,b)=>b.v-a.v||a.i-b.i).map(x=>x.c)}
 function renderCats(){document.querySelectorAll('#kseg button').forEach(b=>b.className=b.dataset.k===kindSel?'a '+(kindSel==='out'?'o':'i'):'');
