@@ -128,7 +128,7 @@ window.addEventListener('unhandledrejection',e=>{const b=document.getElementById
 <div id="panel"></div>
 <div id="toast"></div>
 <script>
-const APP_VERSION='v1.1';
+const APP_VERSION='v1.1.1';
 const DEFAULT_CATS=[
  {"id": "food", "emoji": "🍽️", "name": "식비", "color": "#5CC88A", "kind": "out", "subs": ["외식", "배달", "장보기", "카페·간식", "술"]},
  {"id": "daily", "emoji": "🛒", "name": "생필품", "color": "#EE8F5A", "kind": "out", "subs": ["마트", "생활용품", "온라인쇼핑"]},
@@ -283,7 +283,19 @@ function renderStats(p){const m=monthTx(view),out=m.filter(x=>x.kind==='out'),to
  const cats=Object.keys(by).sort((a,b)=>by[b]-by[a]);const budgeted=visCats('out').filter(c=>+c.budget>0&&!by[c.id]);
  const s1=h('div',{class:'sec'},h('h3',{},h('span',{},'카테고리별 지출'),h('small',{style:'color:var(--sub);font-weight:500'},won(tot))));
  if(!cats.length&&!budgeted.length)s1.append(h('div',{class:'hint'},'아직 지출 기록이 없어요'));
- if(tot){const stack=h('div',{style:'display:flex;height:12px;border-radius:6px;overflow:hidden;margin-bottom:8px'});cats.forEach(id=>stack.append(h('i',{style:`width:${by[id]/tot*100}%;background:${C(id).color}`})));s1.append(stack)}
+ if(tot){const R=62,W2=22,cx=75,cy=75;let a0=-Math.PI/2,g='';
+  const arc=(a,b)=>{const L=b-a>Math.PI?1:0,p=(r,t)=>`${cx+r*Math.cos(t)} ${cy+r*Math.sin(t)}`,ro=R+W2/2,ri=R-W2/2;
+   if(b-a>=2*Math.PI-1e-6)b=a+2*Math.PI-1e-4;return `M${p(ro,a)}A${ro} ${ro} 0 ${L} 1 ${p(ro,b)}L${p(ri,b)}A${ri} ${ri} 0 ${L} 0 ${p(ri,a)}Z`};
+  cats.forEach(id=>{const a1=a0+by[id]/tot*2*Math.PI,op=statOpen.size&&!statOpen.has(id);g+=`<path data-c="${id}" d="${arc(a0,a1)}" fill="${C(id).color}" opacity="${op?.35:1}" stroke="var(--card)" stroke-width="1.5"/>`;
+   const mid=(a0+a1)/2,f=by[id]/tot;if(f>=.07)g+=`<text x="${cx+R*Math.cos(mid)}" y="${cy+R*Math.sin(mid)+4}" font-size="11" font-weight="700" fill="#fff" text-anchor="middle" pointer-events="none">${Math.round(f*100)}%</text>`;a0=a1});
+  g+=`<text x="${cx}" y="${cy-4}" font-size="11" fill="var(--sub)" text-anchor="middle">${sameM(view,new Date())?'이번 달':(view.getMonth()+1)+'월'} 지출</text><text x="${cx}" y="${cy+15}" font-size="16" font-weight="800" fill="var(--txt)" text-anchor="middle">${short(tot)}</text>`;
+  const dn=svgEl(150,150,g);dn.setAttribute('width','150');dn.style.flex='0 0 150px';
+  dn.addEventListener('click',e=>{const id=e.target.getAttribute&&e.target.getAttribute('data-c');if(!id)return;statOpen.has(id)?statOpen.delete(id):statOpen.add(id);renderTab()});
+  const top=cats.slice(0,6),rest=cats.slice(6).reduce((a,id)=>a+by[id],0);
+  const lg=h('div',{style:'flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;font-size:12.5px'},
+   top.map(id=>{const c=C(id);return h('div',{style:'display:flex;align-items:center;gap:6px'},h('i',{style:`width:10px;height:10px;border-radius:3px;background:${c.color};flex:0 0 10px`}),h('span',{style:'flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'},c.emoji+' '+c.name),h('b',{},Math.round(by[id]/tot*100)+'%'))}),
+   rest?h('div',{style:'display:flex;align-items:center;gap:6px;color:var(--sub)'},h('i',{style:'width:10px;height:10px;border-radius:3px;background:var(--line2);flex:0 0 10px'}),h('span',{style:'flex:1'},`그 외 ${cats.length-6}개`),h('b',{},Math.round(rest/tot*100)+'%')):'');
+  s1.append(h('div',{style:'display:flex;align-items:center;gap:12px;margin:2px 0 10px'},dn,lg),h('div',{class:'hint',style:'margin-top:-4px'},'원이나 아래 항목을 누르면 세부 항목이 펼쳐져요'))}
  const mx=Math.max(1,...cats.map(id=>by[id]));
  [...cats,...budgeted.map(c=>c.id)].forEach(id=>{const c=C(id),v=by[id]||0,b=+c.budget||0;
   const ratio=b?v/b:v/mx,col=b?(ratio>=1?'#e5484d':ratio>=.8?'#FF9F43':c.color):c.color;
