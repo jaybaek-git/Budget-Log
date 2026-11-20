@@ -23,7 +23,9 @@ button,input,select{font:inherit;color:inherit}
 button{cursor:pointer}
 .topbar{position:sticky;top:0;z-index:6;background:var(--bg);margin:0 -12px 8px;padding:calc(env(safe-area-inset-top) + 8px) 12px 6px}
 header{display:flex;align-items:center;gap:8px}
-header h1{font-size:20px;margin:0;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+header h1{font-size:20px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ttl{flex:1;min-width:0}
+.lastup{font-size:11px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;min-height:13px}
+.lg{display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13.5px}.lg .w{width:58px;flex:0 0 58px;color:var(--sub);font-size:12px}.lg .s{flex:1;min-width:0}.lg .s small{display:block;color:var(--sub);font-size:11.5px}
 .hb{background:var(--card);border:1px solid var(--line);border-radius:10px;min-width:36px;height:34px;font-size:16px;font-weight:700;padding:0 8px}
 .sync{font-size:12px;color:var(--sub);display:flex;align-items:center;gap:5px}.dot{width:8px;height:8px;border-radius:50%;background:#666}
 .mnav{display:flex;align-items:center;gap:8px;margin-top:8px}
@@ -135,7 +137,7 @@ html[data-theme=light] .bdg.f{color:#5E5AB8}html[data-theme=light] .bdg.p{color:
 <script>window.addEventListener('error',e=>{const b=document.getElementById('errbox');b.style.display='block';b.textContent+='⚠️ 오류: '+e.message+' ('+(e.lineno||'')+')\n'});
 window.addEventListener('unhandledrejection',e=>{const b=document.getElementById('errbox');b.style.display='block';b.textContent+='⚠️ 오류: '+(e.reason&&e.reason.message||e.reason)+'\n'});</script>
 <div class="topbar">
- <header><h1 id="title">가계부</h1><button class="hb" onclick="refresh(true)" aria-label="새로고침">⟳</button><div class="sync"><span class="dot" id="dot"></span><span id="synctxt">로컬</span></div></header>
+ <header><div class="ttl" onclick="openLog()"><h1 id="title">가계부</h1><div id="lastUp" class="lastup"></div></div><button class="hb" onclick="refresh(true)" aria-label="새로고침">⟳</button><div class="sync"><span class="dot" id="dot"></span><span id="synctxt">로컬</span></div></header>
  <div class="mnav"><button onclick="moveMonth(-1)">◀</button><div class="mt" id="mtitle"></div><button id="nowB" class="now" onclick="goNow()">이번 달</button><button onclick="moveMonth(1)">▶</button></div>
 </div>
 <div id="sum"></div>
@@ -145,7 +147,7 @@ window.addEventListener('unhandledrejection',e=>{const b=document.getElementById
 <div id="panel"></div>
 <div id="toast"></div>
 <script>
-const APP_VERSION='v1.2.2';
+const APP_VERSION='v1.3';
 const DEFAULT_CATS=[
  {"id": "food", "emoji": "🍽️", "name": "식비", "color": "#5CC88A", "kind": "out", "subs": ["외식", "배달", "장보기", "카페·간식", "술"]},
  {"id": "daily", "emoji": "🛒", "name": "생필품", "color": "#EE8F5A", "kind": "out", "subs": ["마트", "생활용품", "온라인쇼핑"]},
@@ -187,7 +189,7 @@ const uid=()=>crypto.randomUUID?crypto.randomUUID():'l'+Date.now().toString(36)+
 
 let dev=LS.get('bg_dev',{url:'',key:'',code:'',who:''});
 let config=mergeCfg(LS.get('bg_config',null));
-let txs=LS.get('bg_cache',[]),fixeds=[];
+let txs=LS.get('bg_cache',[]),fixeds=[],logs=[],monthTotals=[];
 let statOpen=new Set(),calSel=null;
 let view=mStart(new Date()),kindSel='out',tab=LS.get('bg_tab','list'),catFilter=null;
 const remote=()=>!!(dev.url&&dev.key&&dev.code);
@@ -214,9 +216,9 @@ const store={
   return LS.get('bg_tx',[]).filter(x=>new Date(x.at)>=from&&new Date(x.at)<to).sort((a,b)=>new Date(b.at)-new Date(a.at))},
  async add(r){if(remote())return await rpc('add_tx',{p_code:dev.code,p_kind:r.kind,p_amount:r.amount,p_cat:r.cat,p_at:r.at,p_memo:r.memo||null,p_by:dev.who||null,p_sub:r.sub||null});
   const x={id:uid(),created_by:dev.who||null,created_at:new Date().toISOString(),fixed_id:null,...r};const a=LS.get('bg_tx',[]);a.push(x);LS.set('bg_tx',a);return x},
- async update(r){if(remote())return await rpc('update_tx',{p_code:dev.code,p_id:r.id,p_kind:r.kind,p_amount:r.amount,p_cat:r.cat,p_at:r.at,p_memo:r.memo||null,p_sub:r.sub||null});
+ async update(r){if(remote())return await rpc('update_tx',{p_code:dev.code,p_id:r.id,p_kind:r.kind,p_amount:r.amount,p_cat:r.cat,p_at:r.at,p_memo:r.memo||null,p_sub:r.sub||null,p_by:dev.who||null});
   const a=LS.get('bg_tx',[]),i=a.findIndex(x=>x.id===r.id);if(i>=0)a[i]={...a[i],...r};LS.set('bg_tx',a);return a[i]},
- async del(id){if(remote())return await rpc('delete_tx',{p_code:dev.code,p_id:id});LS.set('bg_tx',LS.get('bg_tx',[]).filter(x=>x.id!==id))}
+ async del(id){if(remote())return await rpc('delete_tx',{p_code:dev.code,p_id:id,p_by:dev.who||null});LS.set('bg_tx',LS.get('bg_tx',[]).filter(x=>x.id!==id))}
 };
 async function saveConfig(){LS.set('bg_config',config);if(remote())await rpc('set_config',{p_code:dev.code,p_data:config})}
 async function loadConfig(){if(!remote())return;const c=await rpc('get_config',{p_code:dev.code});
@@ -227,7 +229,7 @@ async function refresh(manual){
  try{if(manual&&remote())await loadConfig();
   const from=addM(view,-5),to=addM(view,1);txs=await store.list(from,to);
   if(sameM(view,new Date()))LS.set('bg_cache',txs);
-  if(remote()){fixeds=await rpc('list_fixed',{p_code:dev.code})||[];setSync('ok')}else setSync('local');
+  if(remote()){[fixeds,logs,monthTotals]=await Promise.all([rpc('list_fixed',{p_code:dev.code}),rpc('recent_log',{p_code:dev.code,p_limit:40}).catch(()=>[]),rpc('month_totals',{p_code:dev.code}).catch(()=>[])]);monthTotals=monthTotals||[];fixeds=fixeds||[];logs=logs||[];setSync('ok')}else setSync('local');
   if(manual)toast('새로고침 완료')}
  catch(e){setSync('err',e.message);if(manual)alert('불러오기 실패: '+e.message)}
  finally{loading=false;renderAll()}}
@@ -258,7 +260,13 @@ function amountPad(init,onChange){
 // ── 렌더
 function monthTx(m){const a=mStart(m),b=addM(m,1);return txs.filter(x=>{const d=new Date(x.at);return d>=a&&d<b})}
 const sumK=(arr,k)=>arr.reduce((s,x)=>s+(x.kind===k?+x.amount:0),0);
-function renderAll(){$('#title').textContent=config.title;document.title=config.title;
+const LOGA={add:'추가',edit:'수정',del:'삭제',fixed:'',import:'',backup:'',restore:''};
+function agoT(t){const m=Math.floor((Date.now()-new Date(t))/6e4);if(m<1)return '방금';if(m<60)return m+'분 전';const hh=Math.floor(m/60);if(hh<24)return hh+'시간 전';const d=new Date(t);return (d.getMonth()+1)+'/'+d.getDate()}
+function renderLast(){const el=$('#lastUp');if(!remote()||!logs.length){el.textContent='';return}const l=logs[0];
+ el.textContent=`${l.who||'누군가'} · ${agoT(l.at)} · ${LOGA[l.action]?LOGA[l.action]+' ':''}${(l.summary||'').replace(/^\d+\/\d+ /,'')}`+(logs.length>1?'  ›':'')}
+function openLog(){if(!remote())return;
+ sheet('🕘 최근 변경',h('div',{},logs.length?logs.map(l=>h('div',{class:'lg'},h('div',{class:'w'},agoT(l.at)),h('div',{class:'s'},h('b',{},l.who||'누군가'),' ',LOGA[l.action]||'',h('small',{},l.summary||'')))):h('div',{class:'empty'},'아직 변경 기록이 없어요')),[h('button',{class:'btn pri',onclick:closeSheet},'닫기')])}
+function renderAll(){$('#title').textContent=config.title;renderLast();document.title=config.title;
  $('#mtitle').textContent=`${view.getFullYear()}년 ${view.getMonth()+1}월`;$('#nowB').style.visibility=sameM(view,new Date())?'hidden':'visible';
  renderSum();renderCats();renderTab()}
 const isFut=x=>new Date(x.at)>new Date();
@@ -360,16 +368,26 @@ function renderStats(p){const m=monthTx(view),out=m.filter(x=>x.kind==='out'),to
  if(avg){const y=H-16-avg/dmx*(H-22);g+=`<line x1="0" x2="${W}" y1="${y}" y2="${y}" stroke="var(--sub)" stroke-dasharray="3 3"/><text x="${W-2}" y="${y-3}" font-size="9" fill="var(--sub)" text-anchor="end">평균 ${short(avg)}</text>`}
  const sv=svgEl(W,H,g);sv.addEventListener('click',e=>{const d=e.target.getAttribute&&e.target.getAttribute('data-d');if(d)openDay(new Date(view.getFullYear(),view.getMonth(),+d))});
  p.append(h('div',{class:'sec'},h('h3',{},h('span',{},'일별 지출'),h('small',{style:'color:var(--sub);font-weight:500'},`하루 평균 ${won(avg)}`)),sv,h('div',{class:'hint'},'막대를 누르면 그날 내역을 볼 수 있어요')));
- // 6개월
- const months=[...Array(6)].map((_,i)=>addM(view,i-5)).map(mm=>{const a=monthTx(mm);return {m:mm,o:sumK(a,'out'),i:sumK(a,'in')}});
- const mmx=Math.max(1,...months.flatMap(x=>[x.o,x.i])),W2=340,H2=140,cw=W2/6;let g2='';
- months.forEach((x,i)=>{const bo=x.o/mmx*(H2-34),bi=x.i/mmx*(H2-34),cx=i*cw,sel=sameM(x.m,view);
-  g2+=`<rect data-m="${i}" x="${cx}" y="0" width="${cw}" height="${H2}" fill="${sel?'var(--btn)':'transparent'}" rx="6"/>`;
-  g2+=`<rect data-m="${i}" x="${cx+cw/2-15}" y="${H2-18-bo}" width="14" height="${bo}" rx="2" fill="var(--out)"/><rect data-m="${i}" x="${cx+cw/2+1}" y="${H2-18-bi}" width="14" height="${bi}" rx="2" fill="var(--in)"/>`;
-  g2+=`<text x="${cx+cw/2}" y="${H2-5}" font-size="10" fill="var(--sub)" text-anchor="middle">${x.m.getMonth()+1}월</text>`;
-  if(x.o)g2+=`<text x="${cx+cw/2}" y="${H2-22-Math.max(bo,bi)}" font-size="9" fill="var(--txt)" text-anchor="middle">${short(x.o)}</text>`});
- const sv2=svgEl(W2,H2,g2);sv2.addEventListener('click',e=>{const i=e.target.getAttribute&&e.target.getAttribute('data-m');if(i!=null){view=months[+i].m;refreshView()}});
- p.append(h('div',{class:'sec'},h('h3',{},h('span',{},'최근 6개월'),h('small',{style:'color:var(--sub);font-weight:500'},h('span',{style:'color:var(--out)'},'■ 지출 '),h('span',{style:'color:var(--in)'},'■ 수입'))),sv2));
+ // 월별 추이: 좌우로 밀어서 지난 달 보기, 누르면 그 달로 이동
+ {const mt={};(monthTotals||[]).forEach(r=>mt[String(r.m).slice(0,7)]=r);
+  if(!remote())for(let i=-11;i<=0;i++){const mm=addM(view,i),a=monthTx(mm);if(a.length)mt[dKey(mm).slice(0,7)]={out_sum:sumK(a,'out'),in_sum:sumK(a,'in'),fixed_sum:a.filter(x=>x.fixed_id&&x.kind==='out').reduce((q,x)=>q+ +x.amount,0)}}
+  const ks=Object.keys(mt).sort(),now=mStart(new Date());let last=+view>+now?view:now;if(ks.length){const lk=new Date(ks[ks.length-1]+'-01T00:00:00');if(+lk>+last)last=lk}
+  let first=ks.length?new Date(ks[0]+'-01T00:00:00'):last;if(+first>+view)first=view;if(+first>+addM(last,-5))first=addM(last,-5);
+  const months=[];for(let mm=first;+mm<=+last;mm=addM(mm,1)){const r=mt[dKey(mm).slice(0,7)]||{};months.push({m:mm,o:+r.out_sum||0,i:+r.in_sum||0,f:+r.fixed_sum||0})}
+  const mmx=Math.max(1,...months.flatMap(x=>[x.o,x.i])),CW=58,H2=150,W2=months.length*CW;let g2='';
+  months.forEach((x,i)=>{const bo=x.o/mmx*(H2-40),bi=x.i/mmx*(H2-40),bf=x.f/mmx*(H2-40),cx=i*CW,sel=sameM(x.m,view),yl=x.m.getMonth()===0||i===0;
+   g2+=`<rect data-m="${i}" x="${cx+2}" y="0" width="${CW-4}" height="${H2}" fill="${sel?'var(--btn)':'transparent'}" stroke="${sel?'var(--acc)':'none'}" rx="8"/>`;
+   g2+=`<rect data-m="${i}" x="${cx+CW/2-15}" y="${H2-20-bo}" width="14" height="${bo}" rx="2" fill="var(--out)"/>`;
+   if(bf)g2+=`<rect data-m="${i}" x="${cx+CW/2-15}" y="${H2-20-bf}" width="14" height="${bf}" rx="2" fill="#8A87C9"/>`;
+   g2+=`<rect data-m="${i}" x="${cx+CW/2+1}" y="${H2-20-bi}" width="14" height="${bi}" rx="2" fill="var(--in)"/>`;
+   g2+=`<text x="${cx+CW/2}" y="${H2-6}" font-size="10.5" fill="${sel?'var(--txt)':'var(--sub)'}" font-weight="${sel?700:400}" text-anchor="middle" pointer-events="none">${yl?String(x.m.getFullYear()).slice(2)+'.':''}${x.m.getMonth()+1}월</text>`;
+   if(x.o)g2+=`<text x="${cx+CW/2}" y="${H2-25-Math.max(bo,bi)}" font-size="9.5" fill="var(--txt)" text-anchor="middle" pointer-events="none">${short(x.o)}</text>`});
+  const sv2=svgEl(W2,H2,g2);sv2.setAttribute('width',W2);sv2.style.minWidth=W2+'px';
+  sv2.addEventListener('click',e=>{const i=e.target.getAttribute&&e.target.getAttribute('data-m');if(i!=null&&!sameM(months[+i].m,view)){view=months[+i].m;calSel=null;refreshView()}});
+  const sc=h('div',{class:'hscroll',style:'overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none'},sv2);
+  const si=months.findIndex(x=>sameM(x.m,view));requestAnimationFrame(()=>{sc.scrollLeft=Math.max(0,(si+.5)*CW-sc.clientWidth/2)});
+  p.append(h('div',{class:'sec'},h('h3',{},h('span',{},'월별 추이'),h('small',{style:'color:var(--sub);font-weight:500'},h('span',{style:'color:var(--out)'},'■ 지출 '),h('span',{style:'color:#8A87C9'},'■ 고정 '),h('span',{style:'color:var(--in)'},'■ 수입'))),sc,
+   h('div',{class:'hint'},'좌우로 밀어서 지난 달을 보고, 누르면 그 달로 이동해요')))}
  // 사람별
  const who={};out.forEach(x=>{const k=x.created_by||'(이름 없음)';who[k]=(who[k]||0)+ +x.amount});
  if(Object.keys(who).length)p.append(h('div',{class:'sec'},h('h3',{},h('span',{},'기록한 사람별 지출')),
@@ -428,8 +446,8 @@ function openTx(o){const ed=o.tx;let kind=ed?ed.kind:o.kind||kindSel,cat=ed?ed.c
   if(ed&&ed.fixed_id&&remote()){const f=fixeds.find(x=>x.id===ed.fixed_id);
    const changed=kind!==ed.kind||cat!==ed.cat||(sub||'')!==(ed.sub||'')||amount!==+ed.amount||(memo||'')!==(ed.memo||'')||dKey(at)!==dKey(ed.at);
    if(f&&changed){const sc=await choose('🔁 고정지출 변경을 어떻게 적용할까요?',[['only',`${new Date(ed.at).getMonth()+1}월만 바꾸기`,'다음 달부터는 원래대로'],['from','이번 달부터 계속','앞으로 매달 이렇게 기록']]);if(!sc)return;
-    if(sc==='from'&&sameM(new Date(ed.at),new Date())){try{await rpc('save_fixed',{p_code:dev.code,p_id:f.id,p_kind:kind,p_amount:amount,p_cat:cat,p_sub:sub||null,p_day:dKey(at)===dKey(ed.at)?f.day:at.getDate(),p_memo:memo||null,p_start:f.start_month,p_end:f.end_month,p_active:f.active,p_by:null});closeSheet();await refresh();toast('🔁 이번 달부터 바뀌었어요')}catch(e){alert(e.message)}return}
-    if(sc==='from'){try{await store.update({...r,id:ed.id});await rpc('save_fixed',{p_code:dev.code,p_id:f.id,p_kind:kind,p_amount:amount,p_cat:cat,p_sub:sub||null,p_day:dKey(at)===dKey(ed.at)?f.day:at.getDate(),p_memo:memo||null,p_start:f.start_month,p_end:f.end_month,p_active:f.active,p_by:null});closeSheet();await refresh();toast('🔁 앞으로 이렇게 기록돼요')}catch(e){alert(e.message)}return}}}
+    if(sc==='from'&&sameM(new Date(ed.at),new Date())){try{await rpc('save_fixed',{p_code:dev.code,p_id:f.id,p_kind:kind,p_amount:amount,p_cat:cat,p_sub:sub||null,p_day:dKey(at)===dKey(ed.at)?f.day:at.getDate(),p_memo:memo||null,p_start:f.start_month,p_end:f.end_month,p_active:f.active,p_by:dev.who||null});closeSheet();await refresh();toast('🔁 이번 달부터 바뀌었어요')}catch(e){alert(e.message)}return}
+    if(sc==='from'){try{await store.update({...r,id:ed.id});await rpc('save_fixed',{p_code:dev.code,p_id:f.id,p_kind:kind,p_amount:amount,p_cat:cat,p_sub:sub||null,p_day:dKey(at)===dKey(ed.at)?f.day:at.getDate(),p_memo:memo||null,p_start:f.start_month,p_end:f.end_month,p_active:f.active,p_by:dev.who||null});closeSheet();await refresh();toast('🔁 앞으로 이렇게 기록돼요')}catch(e){alert(e.message)}return}}}
   try{if(ed){await store.update({...r,id:ed.id});closeSheet();await refresh();toast(`${c.emoji} 수정됨`)}
    else{const x=await store.add(r);closeSheet();if(!sameM(at,view))view=mStart(at);await refresh();toast(`${c.emoji} ${c.name}${sub?'·'+sub:''} ${won(amount)} 저장됨`,async()=>{await store.del(x.id);await refresh();toast('취소했어요')})}}
   catch(e){alert('저장 실패: '+e.message)}};
@@ -485,16 +503,27 @@ function renderSettings(p){
  p.append(sec('알림',ps,
   h('div',{style:'display:flex;gap:8px;flex-wrap:wrap'},h('button',{class:'btn pri',onclick:async()=>{if(!remote()){alert('먼저 연결해 주세요');return}try{await enablePush();ps.textContent='✅ 이 폰은 알림을 받고 있어요';toast('알림 켜짐')}catch(e){alert(e.message)}}},'이 폰 알림 켜기'),
    h('button',{class:'btn',onclick:async()=>{try{await rpc('test_push',{p_code:dev.code,p_by:dev.who||null});toast('테스트 알림 보냄')}catch(e){alert(e.message)}}},'테스트')),
-  h('label',{class:'tgl'},live,'배우자가 기록하면 알림 (내 기록은 내 폰에 안 옴)'),
+  h('label',{class:'tgl'},live,'배우자가 기록·수정·삭제하면 알림 (내 것은 내 폰에 안 옴)'),
+  h('div',{class:'sublbl'},'변경 알림 보내는 시간 — 마지막 변경 후 기다렸다가 한 번에 묶어서'),
+  h('div',{class:'chips'},[0,1,2,5,10].map(n=>{const cur=config.liveDelay??2;return h('button',{class:'chip'+(cur===n?' on':''),onclick:async()=>{config.liveDelay=n;try{await saveConfig();toast(n?`${n}분 뒤에 묶어서 보내요`:'바로 보내요');renderTab()}catch(e){alert(e.message)}}},n?n+'분 뒤':'바로')})),
   h('label',{class:'tgl'},bal,'예산 80%·100% 넘으면 알림'),
   h('div',{class:'hint'},'알림은 사파리 → 공유 → "홈 화면에 추가"로 설치한 앱에서만 돼요 (iOS 16.4 이상).')));
  // 화면/데이터
  const th=LS.get('bg_theme','dark');
  p.append(sec('화면',h('div',{class:'chips'},[['dark','🌙 다크'],['light','☀️ 라이트'],['auto','자동']].map(([k,l])=>h('button',{class:'chip'+(th===k?' on':''),onclick:()=>{LS.set('bg_theme',k);applyTheme();renderTab()}},l))),
   h('button',{class:'btn w',onclick:async()=>{const v=prompt('앱 제목',config.title);if(v&&v.trim()){config.title=v.trim();try{await saveConfig()}catch(e){alert(e.message)}renderAll()}}},`제목 바꾸기 (${config.title})`)));
+ if(remote())p.append(backupSec());
  p.append(sec('데이터',h('button',{class:'btn w',onclick:exportCsv},'📤 최근 6개월 CSV 내보내기 (엑셀)'),h('div',{class:'hint'},'보고 있는 달 기준 최근 6개월 내역을 엑셀에서 열 수 있는 CSV로 저장해요.')));
  p.append(h('div',{class:'ver'},`가계부 ${APP_VERSION}`));
 }
+function backupSec(){const list=h('div',{},h('div',{class:'hint'},'불러오는 중…'));
+ const load=async()=>{try{const b=await rpc('list_backups',{p_code:dev.code})||[];
+  list.replaceChildren(...(b.length?b.slice(0,15).map(x=>{const d=new Date(x.at);return h('div',{class:'crow'},h('div',{class:'nm'},h('b',{},`${d.getMonth()+1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`),h('small',{},`${x.kind} · 기록 ${x.n}건`)),
+   h('button',{class:'ib',onclick:async()=>{if(!confirm(`${d.getMonth()+1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())} 백업으로 되돌릴까요?\n지금 내용은 '복원 전' 백업으로 자동 저장돼요.`))return;
+    try{const n=await rpc('restore_backup',{p_code:dev.code,p_id:x.id,p_by:dev.who||null});await refresh(true);toast(`복원 완료 · 기록 ${n}건`);renderTab()}catch(e){alert(e.message)}}},'복원'))}):[h('div',{class:'hint'},'아직 백업이 없어요')]))}catch(e){list.replaceChildren(h('div',{class:'hint'},'불러오기 실패: '+e.message))}};
+ load();
+ return sec('백업',h('div',{class:'hint',style:'margin-top:0'},'매일 새벽 3시에 서버에 자동 백업돼요 (30일치). 복원하면 그 시점의 내역·고정지출·카테고리로 되돌아가요.'),
+  h('button',{class:'btn w',style:'margin-bottom:6px',onclick:async()=>{try{await rpc('backup_now',{p_code:dev.code,p_by:dev.who||null});toast('💾 백업했어요');load()}catch(e){alert(e.message)}}},'💾 지금 백업'),list)}
 function editBudget(){const ap=amountPad(+config.budget.total||0);
  sheet('💰 월 전체 예산',h('div',{},ap.el,h('div',{class:'hint'},'0으로 저장하면 예산을 쓰지 않아요.')),
   [h('button',{class:'btn pri',onclick:async()=>{config.budget.total=ap.get();try{await saveConfig();closeSheet();toast('예산 저장됨');renderAll()}catch(e){alert(e.message)}}},'저장')])}
@@ -556,7 +585,7 @@ function openFixed(f){const cm=dKey(mStart(new Date())).slice(0,7);
   h('div',{class:'sublbl'},'언제까지'),endRow,
   h('label',{class:'tgl'},act,'자동 기록 켜기'),
   h('div',{class:'hint'},'이번 달 것은 날짜가 안 됐어도 바로 "예정"으로 기록돼요.')),
-  [f?h('button',{class:'btn red',style:'flex:0 0 80px',onclick:async()=>{if(!confirm('이 고정 항목을 지울까요?\n(지난 기록은 남고, 아직 안 된 예정 기록은 지워져요. 끝나는 날만 정하려면 "언제까지"를 쓰세요)'))return;try{await rpc('delete_fixed',{p_code:dev.code,p_id:f.id});closeSheet();await refresh()}catch(e){alert(e.message)}}},'삭제'):null,
+  [f?h('button',{class:'btn red',style:'flex:0 0 80px',onclick:async()=>{if(!confirm('이 고정 항목을 지울까요?\n(지난 기록은 남고, 아직 안 된 예정 기록은 지워져요. 끝나는 날만 정하려면 "언제까지"를 쓰세요)'))return;try{await rpc('delete_fixed',{p_code:dev.code,p_id:f.id,p_by:dev.who||null});closeSheet();await refresh()}catch(e){alert(e.message)}}},'삭제'):null,
    h('button',{class:'btn pri',onclick:save},'저장')])}
 function exportCsv(){const rows=[['날짜','시간','구분','카테고리','세부','금액','메모','기록자']];
  [...txs].sort((a,b)=>new Date(a.at)-new Date(b.at)).forEach(x=>{const d=new Date(x.at);rows.push([dKey(d),pad(d.getHours())+':'+pad(d.getMinutes()),x.kind==='out'?'지출':'수입',C(x.cat).name,x.sub||'',x.amount,x.memo||'',x.created_by||''])});
@@ -587,7 +616,7 @@ document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{tab=b.datase
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()});
 setInterval(()=>{if(!document.hidden&&!document.querySelector('.sheet-bg'))refresh()},30000);
 // 스와이프로 달 이동 (내역/통계/달력)
-{let sx=null,sy=null;document.addEventListener('touchstart',e=>{if(document.querySelector('.sheet-bg')||tab==='settings'){sx=null;return}sx=e.touches[0].clientX;sy=e.touches[0].clientY},{passive:true});
+{let sx=null,sy=null;document.addEventListener('touchstart',e=>{if(document.querySelector('.sheet-bg')||tab==='settings'||(e.target.closest&&e.target.closest('.hscroll,.hs'))){sx=null;return}sx=e.touches[0].clientX;sy=e.touches[0].clientY},{passive:true});
  document.addEventListener('touchend',e=>{if(sx==null)return;const dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;sx=null;if(Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*2)moveMonth(dx<0?1:-1)},{passive:true})}
 renderAll();(async()=>{try{if(remote())await loadConfig()}catch(e){setSync('err',e.message)}refresh()})();swReg();
 </script>

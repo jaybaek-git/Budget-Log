@@ -1,7 +1,7 @@
 # 가계부(Budget-Log) 인수인계 메모
 
 > 새 대화에서: "jaybaek-git/Budget-Log 의 HANDOFF.md 먼저 읽고 시작해 줘"
-> 마지막 버전: **v1.2.2** (2026-11-20) — Baby-Log 구조를 그대로 따라 만듦
+> 마지막 버전: **v1.3** (2026-11-20) — Baby-Log 구조를 그대로 따라 만듦
 
 ## 1. 무엇
 - 부부 공유 가계부 웹앱 (PWA). https://jaybaek-git.github.io/Budget-Log/ (GitHub Pages, `main` 루트)
@@ -28,7 +28,7 @@
 - 무료 플랜 활성 프로젝트 2개 제한 → Baby-Log와 이 프로젝트 2개 사용 중
 - 테이블: `tx`(kind, amount, cat, **sub**, at, memo, created_by, fixed_id), `fixed`(day, last_month …), `app_config`, `app_secret`(가족 코드·VAPID), `app_state`(edge_url, 예산 알림 단계), `push_subs`, `push_queue`
 - RLS 켜고 직접 접근 막음 → `SECURITY DEFINER` RPC + `_chk(가족코드)`
-- RPC: add_tx, update_tx, delete_tx, list_tx, import_tx, get_config, set_config, list_fixed, save_fixed, delete_fixed, save_push_sub, delete_push_sub, get_vapid_public, test_push
+- RPC: add_tx, update_tx(p_by), delete_tx(p_by), list_tx, import_tx, recent_log, month_totals, backup_now, list_backups, restore_backup, unskip_fixed, get_config, set_config, list_fixed, save_fixed, delete_fixed, save_push_sub, delete_push_sub, get_vapid_public, test_push
 - 트리거 `_tx_notify`: 이번 달 기록이면 상대방 알림(본인 제외) + 예산 80/100% 알림(달마다 1번씩)
 - pg_cron `budget-log-fixed`: 매일 00:05 KST `_run_fixed()` — 그 달 고정 항목을 날짜와 상관없이 모두 기록(tx.fixed_id+fixed_month 유일), 건너뛴 달(fixed_skip) 제외. 1일에 한 번 요약 알림
 - 알림: `_push()` → push_queue → pg_net → Edge Function `push` (verify_jwt=false)
@@ -45,6 +45,7 @@
 
 ## 6. 버전 기록
 - v1.0 (11/19) 첫 버전 / v1.0.1 화면 오류 표시
+- v1.3 (11/20) 변경 기록(tx_log) — 제목 아래 최근 변경 한 줄, 누르면 최근 40개 / 변경 알림을 바로 안 보내고 n분(설정 liveDelay, 기본 2분) 뒤 사람별로 묶어서 (새 변경 오면 다시 n분) / 서버 백업(매일 03:00 자동 30개 + 수동, 복원 시 '복원 전' 자동 백업) / 통계 '월별 추이' 전체 달 좌우 스크롤·누르면 그 달로(month_totals) — SQL `supabase_v1.3_log_backup.sql`
 - v1.2.2 (11/20) 통계 카테고리별 지출 맨 아래에 고정지출 합계 행(중복 계산 없이 표시만, 누르면 항목 목록)
 - v1.2.1 (11/20) 달력: 날짜 누르면 팝업 대신 달력 아래에 그날 내역 + 이 날 추가 버튼, 안 고르면 그 달 전체 내역 (같은 날 다시 누르면 전체로)
 - v1.2 (11/20) 고정지출 개편 — 이번 달 것은 미래 날짜도 미리 기록(예정), 시작달·종료달(언제까지, 달력 선택), 세부 항목, 금액·날짜 바꾸면 "이번 달만 / 이번 달부터 계속" 선택, 이번 달 기록 지우면 그 달만 건너뜀(fixed_skip, 되살리기 가능), 요약에 고정/변동 따로, 내역 탭 위 고정지출 카드, 행에 '고정'·'예정' 배지, 달력 🔁 표시, 통계 '고정 n원 포함' — SQL `supabase_v1.2_fixed.sql`
