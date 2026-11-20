@@ -147,7 +147,7 @@ window.addEventListener('unhandledrejection',e=>{const b=document.getElementById
 <div id="panel"></div>
 <div id="toast"></div>
 <script>
-const APP_VERSION='v1.3';
+const APP_VERSION='v1.3.1';
 const DEFAULT_CATS=[
  {"id": "food", "emoji": "🍽️", "name": "식비", "color": "#5CC88A", "kind": "out", "subs": ["외식", "배달", "장보기", "카페·간식", "술"]},
  {"id": "daily", "emoji": "🛒", "name": "생필품", "color": "#EE8F5A", "kind": "out", "subs": ["마트", "생활용품", "온라인쇼핑"]},
@@ -190,7 +190,7 @@ const uid=()=>crypto.randomUUID?crypto.randomUUID():'l'+Date.now().toString(36)+
 let dev=LS.get('bg_dev',{url:'',key:'',code:'',who:''});
 let config=mergeCfg(LS.get('bg_config',null));
 let txs=LS.get('bg_cache',[]),fixeds=[],logs=[],monthTotals=[];
-let statOpen=new Set(),calSel=null;
+let statOpen=new Set(),calSel=null,statDay=null;
 let view=mStart(new Date()),kindSel='out',tab=LS.get('bg_tab','list'),catFilter=null;
 const remote=()=>!!(dev.url&&dev.key&&dev.code);
 function mergeCfg(c){c=c||{};if(!Array.isArray(c.cats)||!c.cats.length||!c.catVer){c.cats=JSON.parse(JSON.stringify(DEFAULT_CATS));c.catVer=2}c.cats.forEach(x=>{if(!Array.isArray(x.subs))x.subs=[]});
@@ -358,16 +358,27 @@ function renderStats(p){const m=monthTx(view),out=m.filter(x=>x.kind==='out'),to
    if(op){const box=h('div',{style:'padding:2px 0 4px 36px'});fo.forEach(x=>{const c=C(x.cat);box.append(h('div',{style:'display:flex;align-items:center;gap:8px;font-size:13px;margin:6px 0',onclick:()=>openTx({tx:x})},
      h('span',{style:'width:30px;color:var(--sub)'},new Date(x.at).getDate()+'일'),h('span',{style:'flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'},c.emoji+' '+(x.memo||c.name)),isFut(x)?h('span',{class:'bdg p'},'예정'):'',h('span',{class:'amt',style:'font-size:13px'},won(+x.amount))))});s1.append(box)}}}
  p.append(s1);
- // 일별
- const n=dim(view),daily=Array(n).fill(0);out.forEach(x=>daily[new Date(x.at).getDate()-1]+= +x.amount);
- const dmx=Math.max(1,...daily),W=340,H=130,bw=W/n,isCur=sameM(view,new Date()),td=new Date().getDate();
- const passed=isCur?td:n,avg=daily.slice(0,passed).reduce((a,b)=>a+b,0)/Math.max(1,passed);
- let g='';daily.forEach((v,i)=>{const bh=v/dmx*(H-22);g+=`<rect data-d="${i+1}" x="${i*bw+1}" y="${H-16-bh}" width="${Math.max(1,bw-2)}" height="${Math.max(v?2:0,bh)}" rx="2" fill="${isCur&&i+1===td?'var(--acc)':'var(--out)'}" opacity="${isCur&&i+1>td?.3:.85}"/>`;
-  if((i+1)%5===0||i===0)g+=`<text x="${i*bw+bw/2}" y="${H-3}" font-size="9" fill="var(--sub)" text-anchor="middle">${i+1}</text>`;
-  g+=`<rect data-d="${i+1}" x="${i*bw}" y="0" width="${bw}" height="${H}" fill="transparent"/>`});
- if(avg){const y=H-16-avg/dmx*(H-22);g+=`<line x1="0" x2="${W}" y1="${y}" y2="${y}" stroke="var(--sub)" stroke-dasharray="3 3"/><text x="${W-2}" y="${y-3}" font-size="9" fill="var(--sub)" text-anchor="end">평균 ${short(avg)}</text>`}
- const sv=svgEl(W,H,g);sv.addEventListener('click',e=>{const d=e.target.getAttribute&&e.target.getAttribute('data-d');if(d)openDay(new Date(view.getFullYear(),view.getMonth(),+d))});
- p.append(h('div',{class:'sec'},h('h3',{},h('span',{},'일별 지출'),h('small',{style:'color:var(--sub);font-weight:500'},`하루 평균 ${won(avg)}`)),sv,h('div',{class:'hint'},'막대를 누르면 그날 내역을 볼 수 있어요')));
+ // 일별: 월별 추이와 같은 모양 — 좌우로 밀고, 날짜를 누르면 아래에 그날 내역
+ {const n=dim(view),daily=Array(n).fill(0),dfx=Array(n).fill(0);out.forEach(x=>{const k=new Date(x.at).getDate()-1;daily[k]+= +x.amount;if(x.fixed_id)dfx[k]+= +x.amount});
+  const isCur=sameM(view,new Date()),td=new Date().getDate(),passed=isCur?td:n,avg=daily.slice(0,passed).reduce((a,b)=>a+b,0)/Math.max(1,passed);
+  if(statDay&&statDay>n)statDay=null;
+  const dmx=Math.max(1,...daily),CW=40,H=150,W=n*CW;let g='';
+  daily.forEach((v,i)=>{const d=i+1,bh=v/dmx*(H-40),bf=dfx[i]/dmx*(H-40),cx=i*CW,sel=statDay===d,isT=isCur&&d===td,wd=new Date(view.getFullYear(),view.getMonth(),d).getDay(),fut=isCur&&d>td;
+   g+=`<rect data-d="${d}" x="${cx+2}" y="0" width="${CW-4}" height="${H}" fill="${sel?'var(--btn)':'transparent'}" stroke="${sel?'var(--acc)':isT?'var(--line2)':'none'}" rx="8"/>`;
+   if(v){g+=`<rect data-d="${d}" x="${cx+CW/2-8}" y="${H-20-bh}" width="16" height="${Math.max(2,bh)}" rx="2" fill="var(--out)" opacity="${fut?.4:1}"/>`;
+    if(bf)g+=`<rect data-d="${d}" x="${cx+CW/2-8}" y="${H-20-bf}" width="16" height="${Math.max(2,bf)}" rx="2" fill="#8A87C9" opacity="${fut?.5:1}"/>`;
+    g+=`<text x="${cx+CW/2}" y="${H-25-bh}" font-size="9" fill="var(--txt)" text-anchor="middle" pointer-events="none">${short(v)}</text>`}
+   g+=`<text x="${cx+CW/2}" y="${H-6}" font-size="10.5" font-weight="${sel||isT?700:400}" fill="${wd===0?'#ff6b6b':wd===6?'#5b8def':sel||isT?'var(--txt)':'var(--sub)'}" text-anchor="middle" pointer-events="none">${d}</text>`});
+  if(avg){const y=H-20-avg/dmx*(H-40);g+=`<line x1="0" x2="${W}" y1="${y}" y2="${y}" stroke="var(--sub)" stroke-dasharray="3 3" pointer-events="none"/>`}
+  const sv=svgEl(W,H,g);sv.setAttribute('width',W);sv.style.minWidth=W+'px';
+  sv.addEventListener('click',e=>{const d=e.target.getAttribute&&e.target.getAttribute('data-d');if(d){statDay=statDay===+d?null:+d;renderTab()}});
+  const sc=h('div',{class:'hscroll',style:'overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none'},sv);
+  const focus=statDay||(isCur?td:n);requestAnimationFrame(()=>{sc.scrollLeft=Math.max(0,(focus-.5)*CW-sc.clientWidth/2)});
+  const box=h('div',{class:'sec'},h('h3',{},h('span',{},'일별 지출'),h('small',{style:'color:var(--sub);font-weight:500'},`하루 평균 ${won(avg)} `,h('span',{style:'color:#8A87C9'},'■ 고정'))),sc);
+  if(statDay){const sd=new Date(view.getFullYear(),view.getMonth(),statDay),k=dKey(sd),arr=monthTx(view).filter(x=>dKey(x.at)===k).sort((a,b)=>new Date(a.at)-new Date(b.at));
+   box.append(dayHead(k,arr),...(arr.length?arr.map(txRow):[h('div',{class:'hint',style:'text-align:center;padding:8px'},'이 날은 기록이 없어요')]))}
+  else box.append(h('div',{class:'hint'},'좌우로 밀어서 날짜를 보고, 누르면 아래에 그날 내역이 나와요 (점선 = 하루 평균)'));
+  p.append(box)}
  // 월별 추이: 좌우로 밀어서 지난 달 보기, 누르면 그 달로 이동
  {const mt={};(monthTotals||[]).forEach(r=>mt[String(r.m).slice(0,7)]=r);
   if(!remote())for(let i=-11;i<=0;i++){const mm=addM(view,i),a=monthTx(mm);if(a.length)mt[dKey(mm).slice(0,7)]={out_sum:sumK(a,'out'),in_sum:sumK(a,'in'),fixed_sum:a.filter(x=>x.fixed_id&&x.kind==='out').reduce((q,x)=>q+ +x.amount,0)}}
@@ -383,7 +394,7 @@ function renderStats(p){const m=monthTx(view),out=m.filter(x=>x.kind==='out'),to
    g2+=`<text x="${cx+CW/2}" y="${H2-6}" font-size="10.5" fill="${sel?'var(--txt)':'var(--sub)'}" font-weight="${sel?700:400}" text-anchor="middle" pointer-events="none">${yl?String(x.m.getFullYear()).slice(2)+'.':''}${x.m.getMonth()+1}월</text>`;
    if(x.o)g2+=`<text x="${cx+CW/2}" y="${H2-25-Math.max(bo,bi)}" font-size="9.5" fill="var(--txt)" text-anchor="middle" pointer-events="none">${short(x.o)}</text>`});
   const sv2=svgEl(W2,H2,g2);sv2.setAttribute('width',W2);sv2.style.minWidth=W2+'px';
-  sv2.addEventListener('click',e=>{const i=e.target.getAttribute&&e.target.getAttribute('data-m');if(i!=null&&!sameM(months[+i].m,view)){view=months[+i].m;calSel=null;refreshView()}});
+  sv2.addEventListener('click',e=>{const i=e.target.getAttribute&&e.target.getAttribute('data-m');if(i!=null&&!sameM(months[+i].m,view)){view=months[+i].m;calSel=null;statDay=null;refreshView()}});
   const sc=h('div',{class:'hscroll',style:'overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none'},sv2);
   const si=months.findIndex(x=>sameM(x.m,view));requestAnimationFrame(()=>{sc.scrollLeft=Math.max(0,(si+.5)*CW-sc.clientWidth/2)});
   p.append(h('div',{class:'sec'},h('h3',{},h('span',{},'월별 추이'),h('small',{style:'color:var(--sub);font-weight:500'},h('span',{style:'color:var(--out)'},'■ 지출 '),h('span',{style:'color:#8A87C9'},'■ 고정 '),h('span',{style:'color:var(--in)'},'■ 수입'))),sc,
@@ -609,8 +620,8 @@ async function pushState(){if(!('serviceWorker' in navigator)||!('PushManager' i
 
 // ── 이동/이벤트
 function refreshView(){renderAll();refresh()}
-function moveMonth(n){view=addM(view,n);catFilter=null;calSel=null;refreshView()}
-function goNow(){view=mStart(new Date());calSel=null;refreshView()}
+function moveMonth(n){view=addM(view,n);catFilter=null;calSel=null;statDay=null;refreshView()}
+function goNow(){view=mStart(new Date());calSel=null;statDay=null;refreshView()}
 document.querySelectorAll('#kseg button').forEach(b=>b.onclick=()=>{kindSel=b.dataset.k;renderCats()});
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;LS.set('bg_tab',tab);if(tab!=='list')catFilter=null;renderTab()});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()});
