@@ -147,7 +147,7 @@ window.addEventListener('unhandledrejection',e=>{const b=document.getElementById
 <div id="panel"></div>
 <div id="toast"></div>
 <script>
-const APP_VERSION='v1.3.1';
+const APP_VERSION='v1.3.2';
 const DEFAULT_CATS=[
  {"id": "food", "emoji": "🍽️", "name": "식비", "color": "#5CC88A", "kind": "out", "subs": ["외식", "배달", "장보기", "카페·간식", "술"]},
  {"id": "daily", "emoji": "🛒", "name": "생필품", "color": "#EE8F5A", "kind": "out", "subs": ["마트", "생활용품", "온라인쇼핑"]},
@@ -316,7 +316,26 @@ function renderList(p){let m=monthTx(view);if(!catFilter){const fc=fixedCard();i
  const g={};m.forEach(x=>(g[dKey(x.at)]=g[dKey(x.at)]||[]).push(x));
  Object.keys(g).sort().reverse().forEach(k=>{p.append(dayHead(k,g[k]),...g[k].map(txRow))})}
 function svgEl(w,hh,inner){const s=document.createElementNS('http://www.w3.org/2000/svg','svg');s.setAttribute('viewBox',`0 0 ${w} ${hh}`);s.setAttribute('width','100%');s.innerHTML=inner;return s}
+// 지금까지 전체 합계 (모든 달)
+function allTotals(){let rows=(monthTotals||[]).map(r=>({m:String(r.m).slice(0,7),o:+r.out_sum||0,i:+r.in_sum||0,f:+r.fixed_sum||0}));
+ if(!remote()){const g={};LS.get('bg_tx',[]).forEach(x=>{const k=dKey(x.at).slice(0,7);g[k]=g[k]||{m:k,o:0,i:0,f:0};g[k][x.kind==='out'?'o':'i']+= +x.amount;if(x.fixed_id&&x.kind==='out')g[k].f+= +x.amount});rows=Object.values(g)}
+ rows=rows.filter(r=>r.o||r.i).sort((a,b)=>a.m<b.m?-1:1);
+ const o=rows.reduce((a,r)=>a+r.o,0),i=rows.reduce((a,r)=>a+r.i,0),f=rows.reduce((a,r)=>a+r.f,0);
+ return {rows,o,i,f,from:rows[0]&&rows[0].m,to:rows.length&&rows[rows.length-1].m,n:rows.length}}
+function totalCard(){const t=allTotals();if(!t.n)return null;const ym=k=>k.slice(2,4)+'.'+(+k.slice(5,7));
+ return h('div',{class:'sec',onclick:openTotal},h('h3',{},h('span',{},'💰 지금까지 총 지출'),h('small',{style:'color:var(--sub);font-weight:500'},`${ym(t.from)}~${ym(t.to)} · ${t.n}개월 ›`)),
+  h('div',{style:'font-size:24px;font-weight:800;letter-spacing:-.5px'},won(t.o)),
+  h('div',{class:'sm',style:'display:flex;gap:12px;flex-wrap:wrap;font-size:13px;color:var(--sub);margin-top:4px'},
+   h('span',{},'🔁 고정 ',h('b',{style:'color:var(--txt)'},won(t.f))),h('span',{},'변동 ',h('b',{style:'color:var(--txt)'},won(t.o-t.f))),h('span',{},'월 평균 ',h('b',{style:'color:var(--txt)'},won(t.o/t.n))),t.i?h('span',{},'수입 ',h('b',{style:'color:var(--in)'},won(t.i))):''))}
+function openTotal(){const t=allTotals();if(!t.n)return;
+ sheet('💰 지금까지 총 지출',h('div',{},
+  h('div',{style:'font-size:28px;font-weight:800;margin:2px 0 4px'},won(t.o)),
+  h('div',{class:'hint',style:'margin-top:0'},`${t.from.replace('-','년 ')}월 ~ ${t.to.replace('-','년 ')}월 · ${t.n}개월 · 월 평균 ${won(t.o/t.n)}\n고정 ${won(t.f)} · 변동 ${won(t.o-t.f)}`+(t.i?` · 수입 ${won(t.i)}`:'')),
+  ...[...t.rows].reverse().map(r=>h('div',{class:'crow',onclick:()=>{closeSheet();view=new Date(r.m+'-01T00:00:00');calSel=null;statDay=null;refreshView()}},
+   h('div',{class:'nm'},h('b',{},`${r.m.slice(0,4)}년 ${+r.m.slice(5,7)}월`),h('small',{},`고정 ${won(r.f)} · 변동 ${won(r.o-r.f)}`+(r.i?` · 수입 ${won(r.i)}`:''))),h('span',{class:'amt'},won(r.o)),h('span',{style:'color:var(--sub)'},' ›')))),
+  [h('button',{class:'btn pri',onclick:closeSheet},'닫기')])}
 function renderStats(p){const m=monthTx(view),out=m.filter(x=>x.kind==='out'),tot=sumK(m,'out');
+ {const tc=totalCard();if(tc)p.append(tc)}
  // 카테고리별
  const by={},fxBy={};out.forEach(x=>{by[x.cat]=(by[x.cat]||0)+ +x.amount;if(x.fixed_id)fxBy[x.cat]=(fxBy[x.cat]||0)+ +x.amount});
  const cats=Object.keys(by).sort((a,b)=>by[b]-by[a]);const budgeted=visCats('out').filter(c=>+c.budget>0&&!by[c.id]);
