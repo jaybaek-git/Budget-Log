@@ -116,7 +116,8 @@ svg text{font-family:inherit}
 .fx{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}.fx:last-of-type{border:0}
 .fx .dd{width:42px;text-align:center;font-size:12px;color:var(--sub);font-weight:700}
 .fx.off{opacity:.45}
-#pg{touch-action:pan-y;will-change:transform}
+#track{position:relative;touch-action:pan-y;will-change:transform}
+.pv{position:absolute;top:0;width:100%;overflow:hidden;pointer-events:none;display:none}#pgL{left:calc(-100% - 12px)}#pgR{left:calc(100% + 12px)}
 .li.fix{box-shadow:inset 3px 0 0 #8A87C9}.li.fut{opacity:.62}
 .bdg{display:inline-block;font-size:10.5px;font-weight:700;border-radius:6px;padding:1px 5px;margin-right:4px;vertical-align:1px}
 .bdg.f{background:#8A87C933;color:#A9A6F0}.bdg.p{background:#FFD54A33;color:#E8B923}
@@ -141,16 +142,16 @@ window.addEventListener('unhandledrejection',e=>{const b=document.getElementById
  <header><div class="ttl" onclick="openLog()"><h1 id="title">가계부</h1><div id="lastUp" class="lastup"></div></div><button class="hb" onclick="refresh(true)" aria-label="새로고침">⟳</button><div class="sync"><span class="dot" id="dot"></span><span id="synctxt">로컬</span></div></header>
  <div class="mnav"><button onclick="slideMonth(-1)">◀</button><div class="mt" id="mtitle"></div><button id="nowB" class="now" onclick="goNow()">이번 달</button><button onclick="slideMonth(1)">▶</button></div>
 </div>
-<div id="pg">
+<div id="track"><div id="pg">
 <div id="sum"></div>
 <div class="seg" id="kseg"><button data-k="out">💸 지출</button><button data-k="in">💰 수입</button></div>
 <div class="cats" id="cats"></div>
 <div class="tabs" id="tabs"><button data-t="list">내역</button><button data-t="stats">통계</button><button data-t="cal">달력</button><button data-t="settings">설정</button></div>
 <div id="panel"></div>
-</div>
+</div><div id="pgL" class="pv"></div><div id="pgR" class="pv"></div></div>
 <div id="toast"></div>
 <script>
-const APP_VERSION='v1.3.4';
+const APP_VERSION='v1.3.5';
 const DEFAULT_CATS=[
  {"id": "food", "emoji": "🍽️", "name": "식비", "color": "#5CC88A", "kind": "out", "subs": ["외식", "배달", "장보기", "카페·간식", "술"]},
  {"id": "daily", "emoji": "🛒", "name": "생필품", "color": "#EE8F5A", "kind": "out", "subs": ["마트", "생활용품", "온라인쇼핑"]},
@@ -230,7 +231,7 @@ let loading=false;
 async function refresh(manual){
  if(loading)return;loading=true;if(remote())setSync('busy');
  try{if(manual&&remote())await loadConfig();
-  const from=addM(view,-5),to=addM(view,1);txs=await store.list(from,to);
+  const from=addM(view,-5),to=addM(view,2);txs=await store.list(from,to);
   if(sameM(view,new Date()))LS.set('bg_cache',txs);
   updateRank();
   if(remote()){[fixeds,logs,monthTotals]=await Promise.all([rpc('list_fixed',{p_code:dev.code}),rpc('recent_log',{p_code:dev.code,p_limit:40}).catch(()=>[]),rpc('month_totals',{p_code:dev.code}).catch(()=>[])]);monthTotals=monthTotals||[];fixeds=fixeds||[];logs=logs||[];setSync('ok')}else setSync('local');
@@ -655,23 +656,31 @@ document.querySelectorAll('#kseg button').forEach(b=>b.onclick=()=>{kindSel=b.da
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;LS.set('bg_tab',tab);if(tab!=='list')catFilter=null;renderTab()});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()});
 setInterval(()=>{if(!document.hidden&&!document.querySelector('.sheet-bg'))refresh()},30000);
-// 스와이프로 달 이동: 화면이 손가락을 따라 움직이고, 넘기면 옆 달이 밀려 들어옴
-let sliding=false;
-function slideMonth(n){if(sliding)return;const pg=$('#pg'),W=window.innerWidth;sliding=true;
- const cur=parseFloat((pg.style.transform.match(/-?[\d.]+/)||[0])[0])||0;
- pg.style.transition='transform .18s ease-in';pg.style.transform=`translateX(${n>0?-W:W}px)`;
- setTimeout(()=>{moveMonth(n);pg.style.transition='none';pg.style.transform=`translateX(${n>0?W:-W}px)`;void pg.offsetWidth;
-  pg.style.transition='transform .22s ease-out';pg.style.transform='translateX(0)';
-  setTimeout(()=>{pg.style.transition='';pg.style.transform='';sliding=false},240)},cur&&Math.abs(cur)>W*.6?0:180)}
-{let sx=null,sy=null,dx=0,mode=null,t0=0;const pg=$('#pg');
+// 스와이프로 달 이동: 지난달·다음달 화면이 양옆에 붙어 있어 손가락을 따라 같이 움직임
+let sliding=false,pvReady=false;
+// 지금 화면(#pg)은 건드리지 않고(손가락이 닿은 요소가 바뀌면 터치가 끊김), 화면 밖 복사본에 옆 달을 그려서 사진처럼 붙임
+function buildPreviews(){const keep={view,calSel,statDay,catFilter},live=$('#pg'),H=live.offsetHeight;
+ const box=h('div',{style:`position:absolute;left:-9999px;top:0;width:${live.offsetWidth}px;visibility:hidden`}),sb=live.cloneNode(true);box.append(sb);document.body.prepend(box);
+ const snap=n=>{view=addM(keep.view,n);calSel=null;statDay=null;catFilter=null;renderSum();renderCats();renderTab();const c=sb.cloneNode(true);c.removeAttribute('id');c.querySelectorAll('[id]').forEach(x=>x.removeAttribute('id'));return c};
+ let L,Rr;try{L=snap(-1);Rr=snap(1)}finally{view=keep.view;calSel=keep.calSel;statDay=keep.statDay;catFilter=keep.catFilter;box.remove()}
+ [['#pgL',L],['#pgR',Rr]].forEach(([q,c])=>{const el=$(q);el.replaceChildren(c);el.style.height=H+'px';el.style.display='block'});pvReady=true}
+function clearPreviews(){['#pgL','#pgR'].forEach(q=>{const el=$(q);el.replaceChildren();el.style.display='none'});pvReady=false}
+const gap=()=>window.innerWidth;   // 한 화면 + 간격(12px)만큼 이동
+function setX(x,anim){const t=$('#track');t.style.transition=anim?`transform ${anim}ms cubic-bezier(.22,.7,.3,1)`:'none';t.style.transform=x?`translateX(${x}px)`:''}
+function slideMonth(n){if(sliding)return;sliding=true;if(!pvReady)buildPreviews();
+ setX(n>0?-gap():gap(),260);
+ setTimeout(()=>{moveMonth(n);setX(0,0);clearPreviews();sliding=false},270)}
+{let sx=null,sy=null,dx=0,mode=null,t0=0;
  document.addEventListener('touchstart',e=>{if(sliding||document.querySelector('.sheet-bg')||tab==='settings'||(e.target.closest&&e.target.closest('.hscroll,.hs,.topbar'))){sx=null;return}
   sx=e.touches[0].clientX;sy=e.touches[0].clientY;dx=0;mode=null;t0=Date.now()},{passive:true});
  document.addEventListener('touchmove',e=>{if(sx==null)return;const x=e.touches[0].clientX-sx,y=e.touches[0].clientY-sy;
-  if(!mode){if(Math.abs(x)<8&&Math.abs(y)<8)return;mode=Math.abs(x)>Math.abs(y)*1.2?'h':'v'}
-  if(mode!=='h')return;dx=x;pg.style.transition='none';pg.style.transform=`translateX(${dx}px)`;pg.style.opacity=String(1-Math.min(.35,Math.abs(dx)/window.innerWidth*.5))},{passive:true});
- const end=()=>{if(sx==null)return;sx=null;if(mode!=='h')return;pg.style.opacity='';const v=Math.abs(dx)/Math.max(1,Date.now()-t0);
-  if(Math.abs(dx)>window.innerWidth*.25||(Math.abs(dx)>40&&v>.5))slideMonth(dx<0?1:-1);
-  else{pg.style.transition='transform .2s ease-out';pg.style.transform='translateX(0)';setTimeout(()=>{pg.style.transition='';pg.style.transform=''},220)}};
+  if(!mode){if(Math.abs(x)<8&&Math.abs(y)<8)return;mode=Math.abs(x)>Math.abs(y)*1.2?'h':'v';if(mode==='h'){buildPreviews();sx+=x>0?8:-8}}
+  if(mode!=='h')return;dx=e.touches[0].clientX-sx;setX(dx,0)},{passive:true});
+ const end=()=>{if(sx==null)return;sx=null;if(mode!=='h')return;const v=Math.abs(dx)/Math.max(1,Date.now()-t0);
+  if(Math.abs(dx)>window.innerWidth*.3||(Math.abs(dx)>40&&v>.45)){const n=dx<0?1:-1;sliding=true;
+   const rest=gap()-Math.abs(dx),ms=Math.max(120,Math.min(260,rest/Math.max(v,1)*1.2));
+   setX(n>0?-gap():gap(),ms);setTimeout(()=>{moveMonth(n);setX(0,0);clearPreviews();sliding=false},ms+10)}
+  else{setX(0,220);setTimeout(()=>{clearPreviews()},230)}};
  document.addEventListener('touchend',end,{passive:true});document.addEventListener('touchcancel',end,{passive:true})}
 renderAll();(async()=>{try{if(remote())await loadConfig()}catch(e){setSync('err',e.message)}refresh()})();swReg();
 </script>
