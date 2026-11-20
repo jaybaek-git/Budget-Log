@@ -145,7 +145,7 @@ window.addEventListener('unhandledrejection',e=>{const b=document.getElementById
 <div id="panel"></div>
 <div id="toast"></div>
 <script>
-const APP_VERSION='v1.2.1';
+const APP_VERSION='v1.2.2';
 const DEFAULT_CATS=[
  {"id": "food", "emoji": "🍽️", "name": "식비", "color": "#5CC88A", "kind": "out", "subs": ["외식", "배달", "장보기", "카페·간식", "술"]},
  {"id": "daily", "emoji": "🛒", "name": "생필품", "color": "#EE8F5A", "kind": "out", "subs": ["마트", "생활용품", "온라인쇼핑"]},
@@ -339,6 +339,16 @@ function renderStats(p){const m=monthTx(view),out=m.filter(x=>x.kind==='out'),to
    Object.entries(bs).sort((a,b)=>b[1]-a[1]).forEach(([k,vv])=>box.append(h('div',{style:'display:flex;align-items:center;gap:8px;font-size:13px;margin:6px 0'},
     h('span',{style:'width:86px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'+(k==='세부 없음'?';color:var(--sub)':'')},k),h('div',{class:'cbar',style:'flex:1;margin:0'},h('i',{style:`width:${v?vv/v*100:0}%;background:${c.color}`})),h('span',{class:'amt',style:'font-size:13px'},won(vv)))));
    box.append(h('button',{class:'chip ghost',style:'margin-top:4px',onclick:()=>openCatTx(id)},'내역 보기 ›'));s1.append(box)}});
+ // 고정지출 합계 (위 카테고리 금액에 이미 포함 — 따로 보여주기만, 중복 계산 없음)
+ {const fo=out.filter(x=>x.fixed_id).sort((a,b)=>new Date(a.at)-new Date(b.at)),ft=fo.reduce((a,x)=>a+ +x.amount,0);
+  if(fo.length){const fp=fo.filter(isFut).reduce((a,x)=>a+ +x.amount,0),op=statOpen.has('__fixed');
+   s1.append(h('div',{class:'crow',style:'border-top:1px dashed var(--line2);border-bottom:0;margin-top:4px;padding-top:10px',onclick:()=>{op?statOpen.delete('__fixed'):statOpen.add('__fixed');renderTab()}},
+    h('div',{class:'ic',style:'font-size:20px;width:28px;text-align:center'},'🔁'),
+    h('div',{class:'nm'},h('div',{style:'display:flex;justify-content:space-between;gap:6px'},h('b',{style:'color:#A9A6F0'},'고정지출',h('span',{style:'color:var(--sub);font-weight:400;font-size:12px'},op?' ▾':' ▸')),h('span',{class:'amt',style:'color:#A9A6F0'},won(ft))),
+     h('div',{class:'cbar'},h('i',{style:`width:${tot?ft/tot*100:0}%;background:#8A87C9`})),
+     h('small',{},`${fo.length}건 · 지출의 ${tot?Math.round(ft/tot*100):0}%`+(fp?` · 예정 ${won(fp)}`:'')+' · 위 카테고리에 포함된 금액'))));
+   if(op){const box=h('div',{style:'padding:2px 0 4px 36px'});fo.forEach(x=>{const c=C(x.cat);box.append(h('div',{style:'display:flex;align-items:center;gap:8px;font-size:13px;margin:6px 0',onclick:()=>openTx({tx:x})},
+     h('span',{style:'width:30px;color:var(--sub)'},new Date(x.at).getDate()+'일'),h('span',{style:'flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'},c.emoji+' '+(x.memo||c.name)),isFut(x)?h('span',{class:'bdg p'},'예정'):'',h('span',{class:'amt',style:'font-size:13px'},won(+x.amount))))});s1.append(box)}}}
  p.append(s1);
  // 일별
  const n=dim(view),daily=Array(n).fill(0);out.forEach(x=>daily[new Date(x.at).getDate()-1]+= +x.amount);
