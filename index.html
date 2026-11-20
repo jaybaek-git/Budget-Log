@@ -124,6 +124,9 @@ html[data-theme=light] .bdg.f{color:#5E5AB8}html[data-theme=light] .bdg.p{color:
 .fxr .dd{width:34px;font-size:12px;color:var(--sub);font-weight:700}.fxr .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fxr.fut .nm,.fxr.fut .amt{opacity:.6}.fxr.skip{opacity:.4;text-decoration:line-through}
 .fxbanner{background:#8A87C922;border:1px solid #8A87C966;border-radius:10px;padding:8px 10px;font-size:13px;margin-bottom:8px;display:flex;align-items:center;gap:8px}.fxbanner span{flex:1}
+.cal .d.sel{border-color:#8A87C9;background:#8A87C933}.cal .d.t.sel{border-color:var(--acc)}
+.calday{margin-top:10px}.calday .dh:first-child{margin-top:4px}
+.calhd{display:flex;align-items:center;justify-content:space-between;margin:12px 2px 0;font-weight:700}
 .cal .d .f{font-size:9px;color:#A9A6F0}
 </style>
 </head>
@@ -142,7 +145,7 @@ window.addEventListener('unhandledrejection',e=>{const b=document.getElementById
 <div id="panel"></div>
 <div id="toast"></div>
 <script>
-const APP_VERSION='v1.2';
+const APP_VERSION='v1.2.1';
 const DEFAULT_CATS=[
  {"id": "food", "emoji": "🍽️", "name": "식비", "color": "#5CC88A", "kind": "out", "subs": ["외식", "배달", "장보기", "카페·간식", "술"]},
  {"id": "daily", "emoji": "🛒", "name": "생필품", "color": "#EE8F5A", "kind": "out", "subs": ["마트", "생활용품", "온라인쇼핑"]},
@@ -185,7 +188,7 @@ const uid=()=>crypto.randomUUID?crypto.randomUUID():'l'+Date.now().toString(36)+
 let dev=LS.get('bg_dev',{url:'',key:'',code:'',who:''});
 let config=mergeCfg(LS.get('bg_config',null));
 let txs=LS.get('bg_cache',[]),fixeds=[];
-let statOpen=new Set();
+let statOpen=new Set(),calSel=null;
 let view=mStart(new Date()),kindSel='out',tab=LS.get('bg_tab','list'),catFilter=null;
 const remote=()=>!!(dev.url&&dev.key&&dev.code);
 function mergeCfg(c){c=c||{};if(!Array.isArray(c.cats)||!c.cats.length||!c.catVer){c.cats=JSON.parse(JSON.stringify(DEFAULT_CATS));c.catVer=2}c.cats.forEach(x=>{if(!Array.isArray(x.subs))x.subs=[]});
@@ -367,10 +370,18 @@ function renderCal(p){const n=dim(view),first=new Date(view.getFullYear(),view.g
  for(let i=0;i<first;i++)grid.append(h('div',{class:'d x'}));
  const today=new Date();
  for(let d=1;d<=n;d++){const b=by[d],wd=(first+d-1)%7,isT=sameM(view,today)&&d===today.getDate();
-  grid.append(h('div',{class:'d'+(isT?' t':''),onclick:()=>openDay(new Date(view.getFullYear(),view.getMonth(),d))},h('span',{class:'n '+(wd===0?'sun':wd===6?'sat':'')},d),
+  const isS=calSel===d;grid.append(h('div',{class:'d'+(isT?' t':'')+(isS?' sel':''),onclick:()=>{calSel=calSel===d?null:d;renderTab()}},h('span',{class:'n '+(wd===0?'sun':wd===6?'sat':'')},d),
    b&&b.o?h('span',{class:'o'},'-'+short(b.o)):null,b&&b.i?h('span',{class:'i'},'+'+short(b.i)):null,b&&b.f?h('span',{class:'f'},'🔁'+b.f):null))}
  const out=sumK(m,'out'),days=Object.values(by).filter(x=>x.o&&x.o>0).length;
- p.append(h('div',{class:'sec',style:'padding:8px'},grid),h('div',{class:'hint',style:'text-align:center'},`지출한 날 ${days}일 · 지출 없는 날 ${(sameM(view,today)?today.getDate():n)-days}일 · 날짜를 누르면 그날 내역/추가`))}
+ p.append(h('div',{class:'sec',style:'padding:8px;margin-bottom:0'},grid));
+ // 달력 아래 내역: 날짜를 고르면 그날만, 아니면 그 달 전체 (같은 날 다시 누르면 전체로)
+ if(calSel&&calSel<=n){const sd=new Date(view.getFullYear(),view.getMonth(),calSel),k=dKey(sd),arr=m.filter(x=>dKey(x.at)===k).sort((a,b)=>new Date(a.at)-new Date(b.at));
+  p.append(h('div',{class:'calday'},h('div',{class:'calhd'},h('span',{},''),h('button',{class:'chip ghost',style:'padding:4px 10px;font-size:12px',onclick:()=>{calSel=null;renderTab()}},'달 전체 보기')),
+   dayHead(k,arr),arr.length?arr.map(txRow):h('div',{class:'empty',style:'padding:14px'},'이 날은 기록이 없어요'),
+   h('div',{style:'display:flex;gap:8px;margin-top:6px'},h('button',{class:'btn',style:'flex:1',onclick:()=>openTx({kind:'in',date:sd})},'💰 이 날 수입 추가'),h('button',{class:'btn pri',style:'flex:1',onclick:()=>openTx({kind:'out',date:sd})},'💸 이 날 지출 추가'))))}
+ else{const g={};m.forEach(x=>(g[dKey(x.at)]=g[dKey(x.at)]||[]).push(x));const ks=Object.keys(g).sort().reverse();
+  p.append(h('div',{class:'calday'},h('div',{class:'calhd'},h('span',{},`${view.getMonth()+1}월 전체 내역`),h('small',{style:'color:var(--sub);font-weight:400'},'날짜를 누르면 그날만')),
+   ks.length?ks.map(k=>[dayHead(k,g[k]),...g[k].map(txRow)]):h('div',{class:'empty',style:'padding:14px'},'이 달 기록이 없어요')))}}
 // 통계에서 카테고리 내역을 시트로 보기 (닫으면 통계 그대로)
 function openCatTx(id,sf){const c=C(id),all=monthTx(view).filter(x=>x.cat===id).sort((a,b)=>new Date(b.at)-new Date(a.at));
  const subs=[...new Set(all.map(x=>x.sub||''))];const arr=sf==null?all:all.filter(x=>(x.sub||'')===sf);
@@ -559,8 +570,8 @@ async function pushState(){if(!('serviceWorker' in navigator)||!('PushManager' i
 
 // ── 이동/이벤트
 function refreshView(){renderAll();refresh()}
-function moveMonth(n){view=addM(view,n);catFilter=null;refreshView()}
-function goNow(){view=mStart(new Date());refreshView()}
+function moveMonth(n){view=addM(view,n);catFilter=null;calSel=null;refreshView()}
+function goNow(){view=mStart(new Date());calSel=null;refreshView()}
 document.querySelectorAll('#kseg button').forEach(b=>b.onclick=()=>{kindSel=b.dataset.k;renderCats()});
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;LS.set('bg_tab',tab);if(tab!=='list')catFilter=null;renderTab()});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()});
