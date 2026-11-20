@@ -151,7 +151,7 @@ window.addEventListener('unhandledrejection',e=>{const b=document.getElementById
 </div><div id="pgL" class="pv"></div><div id="pgR" class="pv"></div></div>
 <div id="toast"></div>
 <script>
-const APP_VERSION='v1.3.5';
+const APP_VERSION='v1.3.6';
 const DEFAULT_CATS=[
  {"id": "food", "emoji": "🍽️", "name": "식비", "color": "#5CC88A", "kind": "out", "subs": ["외식", "배달", "장보기", "카페·간식", "술"]},
  {"id": "daily", "emoji": "🛒", "name": "생필품", "color": "#EE8F5A", "kind": "out", "subs": ["마트", "생활용품", "온라인쇼핑"]},
@@ -227,9 +227,9 @@ const store={
 async function saveConfig(){LS.set('bg_config',config);if(remote())await rpc('set_config',{p_code:dev.code,p_data:config})}
 async function loadConfig(){if(!remote())return;const c=await rpc('get_config',{p_code:dev.code});
  if(c){config=mergeCfg(c);LS.set('bg_config',config)}else await rpc('set_config',{p_code:dev.code,p_data:config})}
-let loading=false;
+let loading=false,again=false,lastSig='';
 async function refresh(manual){
- if(loading)return;loading=true;if(remote())setSync('busy');
+ if(loading){again=true;return}loading=true;again=false;if(remote())setSync('busy');const v0=+view;
  try{if(manual&&remote())await loadConfig();
   const from=addM(view,-5),to=addM(view,2);txs=await store.list(from,to);
   if(sameM(view,new Date()))LS.set('bg_cache',txs);
@@ -237,7 +237,11 @@ async function refresh(manual){
   if(remote()){[fixeds,logs,monthTotals]=await Promise.all([rpc('list_fixed',{p_code:dev.code}),rpc('recent_log',{p_code:dev.code,p_limit:40}).catch(()=>[]),rpc('month_totals',{p_code:dev.code}).catch(()=>[])]);monthTotals=monthTotals||[];fixeds=fixeds||[];logs=logs||[];setSync('ok')}else setSync('local');
   if(manual)toast('새로고침 완료')}
  catch(e){setSync('err',e.message);if(manual)alert('불러오기 실패: '+e.message)}
- finally{loading=false;renderAll()}}
+ finally{loading=false;
+  if(again||+view!==v0){refresh();return}
+  // 바뀐 게 없으면 다시 그리지 않음 (넘긴 직후 화면이 한 번 더 깜빡이는 것 방지)
+  const sig=JSON.stringify([txs.length,txs.slice(0,3).map(x=>x.id+x.amount+x.at),monthTx(view).reduce((a,x)=>a+ +x.amount+(x.memo||'').length,0),fixeds.length,logs[0]&&logs[0].id,monthTotals.length,config]);
+  if(manual||sig!==lastSig||!sliding&&!dragging){if(sig!==lastSig||manual)renderAll();else renderLast()}lastSig=sig}}
 
 // ── 공통 UI
 let toastT;
@@ -271,7 +275,7 @@ function renderLast(){const el=$('#lastUp');if(!remote()||!logs.length){el.textC
  el.textContent=`${l.who||'누군가'} · ${agoT(l.at)} · ${LOGA[l.action]?LOGA[l.action]+' ':''}${(l.summary||'').replace(/^\d+\/\d+ /,'')}`+(logs.length>1?'  ›':'')}
 function openLog(){if(!remote())return;
  sheet('🕘 최근 변경',h('div',{},logs.length?logs.map(l=>h('div',{class:'lg'},h('div',{class:'w'},agoT(l.at)),h('div',{class:'s'},h('b',{},l.who||'누군가'),' ',LOGA[l.action]||'',h('small',{},l.summary||'')))):h('div',{class:'empty'},'아직 변경 기록이 없어요')),[h('button',{class:'btn pri',onclick:closeSheet},'닫기')])}
-function renderAll(){$('#title').textContent=config.title;renderLast();document.title=config.title;
+function renderAll(){pvVer++;schedulePrep();$('#title').textContent=config.title;renderLast();document.title=config.title;
  $('#mtitle').textContent=`${view.getFullYear()}년 ${view.getMonth()+1}월`;$('#nowB').style.visibility=sameM(view,new Date())?'hidden':'visible';
  renderSum();renderCats();renderTab()}
 const isFut=x=>new Date(x.at)>new Date();
@@ -655,32 +659,41 @@ function goNow(){view=mStart(new Date());calSel=null;statDay=null;refreshView()}
 document.querySelectorAll('#kseg button').forEach(b=>b.onclick=()=>{kindSel=b.dataset.k;renderCats()});
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;LS.set('bg_tab',tab);if(tab!=='list')catFilter=null;renderTab()});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()});
-setInterval(()=>{if(!document.hidden&&!document.querySelector('.sheet-bg'))refresh()},30000);
+setInterval(()=>{if(!document.hidden&&!document.querySelector('.sheet-bg')&&!dragging&&!sliding)refresh()},30000);
 // 스와이프로 달 이동: 지난달·다음달 화면이 양옆에 붙어 있어 손가락을 따라 같이 움직임
-let sliding=false,pvReady=false;
-// 지금 화면(#pg)은 건드리지 않고(손가락이 닿은 요소가 바뀌면 터치가 끊김), 화면 밖 복사본에 옆 달을 그려서 사진처럼 붙임
-function buildPreviews(){const keep={view,calSel,statDay,catFilter},live=$('#pg'),H=live.offsetHeight;
+// 부드럽게: 옆 달 화면은 미리(쉬는 시간에) 만들어 두고, 움직임은 GPU 이동(translate3d)만, 화면 갱신은 프레임마다 한 번
+let sliding=false,dragging=false,pvReady=false,pvVer=0,pvCache=null,prepT=null;
+function makePreviews(){const keep={view,calSel,statDay,catFilter},live=$('#pg');
  const box=h('div',{style:`position:absolute;left:-9999px;top:0;width:${live.offsetWidth}px;visibility:hidden`}),sb=live.cloneNode(true);box.append(sb);document.body.prepend(box);
- const snap=n=>{view=addM(keep.view,n);calSel=null;statDay=null;catFilter=null;renderSum();renderCats();renderTab();const c=sb.cloneNode(true);c.removeAttribute('id');c.querySelectorAll('[id]').forEach(x=>x.removeAttribute('id'));return c};
+ const cut=window.innerHeight*1.5+window.scrollY;
+ const snap=n=>{view=addM(keep.view,n);calSel=null;statDay=null;catFilter=null;renderSum();renderCats();renderTab();
+  const c=sb.cloneNode(true);c.removeAttribute('id');c.querySelectorAll('[id]').forEach(x=>x.removeAttribute('id'));
+  // 화면 아래로 한참 벗어난 내역은 미리보기에서 빼서 가볍게
+  const rows=sb.querySelectorAll('#panel .li,#panel .dh'),crow=c.querySelectorAll('.li,.dh');rows.forEach((r,k)=>{if(r.offsetTop>cut&&crow[k])crow[k].remove()});return c};
  let L,Rr;try{L=snap(-1);Rr=snap(1)}finally{view=keep.view;calSel=keep.calSel;statDay=keep.statDay;catFilter=keep.catFilter;box.remove()}
- [['#pgL',L],['#pgR',Rr]].forEach(([q,c])=>{const el=$(q);el.replaceChildren(c);el.style.height=H+'px';el.style.display='block'});pvReady=true}
+ return {ver:pvVer,v:+view,L,R:Rr}}
+function schedulePrep(){clearTimeout(prepT);prepT=setTimeout(()=>{if(dragging||sliding||document.querySelector('.sheet-bg')||tab==='settings')return;
+ const go=()=>{try{pvCache=makePreviews()}catch(e){pvCache=null}};(window.requestIdleCallback?requestIdleCallback(go,{timeout:800}):go())},350)}
+function buildPreviews(){const H=$('#pg').offsetHeight;if(!pvCache||pvCache.ver!==pvVer||pvCache.v!==+view)pvCache=makePreviews();
+ [['#pgL',pvCache.L],['#pgR',pvCache.R]].forEach(([q,c])=>{const el=$(q);el.replaceChildren(c.cloneNode(true));el.style.height=H+'px';el.style.display='block'});pvReady=true}
 function clearPreviews(){['#pgL','#pgR'].forEach(q=>{const el=$(q);el.replaceChildren();el.style.display='none'});pvReady=false}
-const gap=()=>window.innerWidth;   // 한 화면 + 간격(12px)만큼 이동
-function setX(x,anim){const t=$('#track');t.style.transition=anim?`transform ${anim}ms cubic-bezier(.22,.7,.3,1)`:'none';t.style.transform=x?`translateX(${x}px)`:''}
-function slideMonth(n){if(sliding)return;sliding=true;if(!pvReady)buildPreviews();
- setX(n>0?-gap():gap(),260);
- setTimeout(()=>{moveMonth(n);setX(0,0);clearPreviews();sliding=false},270)}
-{let sx=null,sy=null,dx=0,mode=null,t0=0;
+// 옆 달 화면까지의 정확한 거리 (화면 폭과 여백 차이로 끝에 살짝 더 갔다 돌아오는 현상 방지)
+const gap=()=>{const r=$('#pgR');return r&&r.offsetLeft>0?r.offsetLeft:$('#track').offsetWidth+12};
+function setX(x,anim){const t=$('#track');t.style.transition=anim?`transform ${anim}ms cubic-bezier(.22,.7,.3,1)`:'none';t.style.transform=x?`translate3d(${x}px,0,0)`:''}
+function land(n,ms){sliding=true;setX(n>0?-gap():gap(),ms);
+ setTimeout(()=>{requestAnimationFrame(()=>{moveMonth(n);setX(0,0);clearPreviews();sliding=false})},ms+20)}
+function slideMonth(n){if(sliding)return;buildPreviews();requestAnimationFrame(()=>land(n,280))}
+{let sx=null,sy=null,dx=0,mode=null,t0=0,raf=0,lx=0,lt=0,vx=0;
  document.addEventListener('touchstart',e=>{if(sliding||document.querySelector('.sheet-bg')||tab==='settings'||(e.target.closest&&e.target.closest('.hscroll,.hs,.topbar'))){sx=null;return}
-  sx=e.touches[0].clientX;sy=e.touches[0].clientY;dx=0;mode=null;t0=Date.now()},{passive:true});
- document.addEventListener('touchmove',e=>{if(sx==null)return;const x=e.touches[0].clientX-sx,y=e.touches[0].clientY-sy;
-  if(!mode){if(Math.abs(x)<8&&Math.abs(y)<8)return;mode=Math.abs(x)>Math.abs(y)*1.2?'h':'v';if(mode==='h'){buildPreviews();sx+=x>0?8:-8}}
-  if(mode!=='h')return;dx=e.touches[0].clientX-sx;setX(dx,0)},{passive:true});
- const end=()=>{if(sx==null)return;sx=null;if(mode!=='h')return;const v=Math.abs(dx)/Math.max(1,Date.now()-t0);
-  if(Math.abs(dx)>window.innerWidth*.3||(Math.abs(dx)>40&&v>.45)){const n=dx<0?1:-1;sliding=true;
-   const rest=gap()-Math.abs(dx),ms=Math.max(120,Math.min(260,rest/Math.max(v,1)*1.2));
-   setX(n>0?-gap():gap(),ms);setTimeout(()=>{moveMonth(n);setX(0,0);clearPreviews();sliding=false},ms+10)}
-  else{setX(0,220);setTimeout(()=>{clearPreviews()},230)}};
+  sx=e.touches[0].clientX;sy=e.touches[0].clientY;dx=0;mode=null;t0=lt=Date.now();lx=sx;vx=0},{passive:true});
+ document.addEventListener('touchmove',e=>{if(sx==null)return;const cx=e.touches[0].clientX,x=cx-sx,y=e.touches[0].clientY-sy;
+  if(!mode){if(Math.abs(x)<8&&Math.abs(y)<8)return;mode=Math.abs(x)>Math.abs(y)*1.2?'h':'v';if(mode==='h'){dragging=true;buildPreviews();sx+=x>0?8:-8}}
+  if(mode!=='h')return;const now=Date.now();vx=(cx-lx)/Math.max(1,now-lt);lx=cx;lt=now;dx=cx-sx;
+  if(!raf)raf=requestAnimationFrame(()=>{raf=0;setX(dx,0)})},{passive:true});
+ const end=()=>{if(sx==null)return;sx=null;if(mode!=='h')return;dragging=false;if(raf){cancelAnimationFrame(raf);raf=0}
+  const fling=Math.abs(vx)>.4&&Math.sign(vx)===Math.sign(dx);
+  if(Math.abs(dx)>window.innerWidth*.3||(Math.abs(dx)>30&&fling)){const rest=gap()-Math.abs(dx);land(dx<0?1:-1,Math.max(140,Math.min(300,rest/Math.max(Math.abs(vx),1.2))))}
+  else{setX(0,220);setTimeout(clearPreviews,230)}};
  document.addEventListener('touchend',end,{passive:true});document.addEventListener('touchcancel',end,{passive:true})}
 renderAll();(async()=>{try{if(remote())await loadConfig()}catch(e){setSync('err',e.message)}refresh()})();swReg();
 </script>
