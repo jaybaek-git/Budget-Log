@@ -151,7 +151,7 @@ window.addEventListener('unhandledrejection',e=>{const b=document.getElementById
 </div><div id="pgL" class="pv"></div><div id="pgR" class="pv"></div></div>
 <div id="toast"></div>
 <script>
-const APP_VERSION='v1.3.8';
+const APP_VERSION='v1.3.9';
 const DEFAULT_CATS=[
  {"id": "food", "emoji": "🍽️", "name": "식비", "color": "#5CC88A", "kind": "out", "subs": ["외식", "배달", "장보기", "카페·간식", "술"]},
  {"id": "daily", "emoji": "🛒", "name": "생필품", "color": "#EE8F5A", "kind": "out", "subs": ["마트", "생활용품", "온라인쇼핑"]},
@@ -193,12 +193,14 @@ const uid=()=>crypto.randomUUID?crypto.randomUUID():'l'+Date.now().toString(36)+
 
 let dev=LS.get('bg_dev',{url:'',key:'',code:'',who:''});
 let config=mergeCfg(LS.get('bg_config',null));
-let txs=LS.get('bg_cache',[]),fixeds=[],logs=[],monthTotals=[];
+let txs=LS.get('bg_cache',[]),fixeds=[],logs=[],monthTotals=[],monthCat=[];
+// 카테고리별 월합계 → 월합계
+function foldMonths(rows){const g={};(rows||[]).forEach(r=>{const k=String(r.m).slice(0,10);g[k]=g[k]||{m:k,out_sum:0,in_sum:0,fixed_sum:0};g[k].out_sum+= +r.out_sum||0;g[k].in_sum+= +r.in_sum||0;g[k].fixed_sum+= +r.fixed_sum||0});return Object.values(g).sort((a,b)=>a.m<b.m?-1:1)}
 let statOpen=new Set(),calSel=null,statDay=null;
 let view=mStart(new Date()),kindSel='out',tab=LS.get('bg_tab','list'),catFilter=null;
 const remote=()=>!!(dev.url&&dev.key&&dev.code);
 function mergeCfg(c){c=c||{};if(!Array.isArray(c.cats)||!c.cats.length||!c.catVer){c.cats=JSON.parse(JSON.stringify(DEFAULT_CATS));c.catVer=2}c.cats.forEach(x=>{if(!Array.isArray(x.subs))x.subs=[]});
- c.budget={total:0,alert:true,...(c.budget||{})};if(c.liveNotify===undefined)c.liveNotify=true;c.title=c.title||'가계부';return c}
+ c.budget={total:0,alert:true,...(c.budget||{})};if(c.liveNotify===undefined)c.liveNotify=true;if(!Array.isArray(c.lifeExclude))c.lifeExclude=['loan','saving'];c.title=c.title||'가계부';return c}
 const C=id=>config.cats.find(c=>c.id===id)||{id,name:id,emoji:'•',color:'#888',kind:'out'};
 const visCats=k=>config.cats.filter(c=>c.kind===k&&!c.hidden);
 
@@ -234,14 +236,15 @@ async function refresh(manual){
   const from=addM(view,-5),to=addM(view,2);txs=await store.list(from,to);
   if(sameM(view,new Date()))LS.set('bg_cache',txs);
   updateRank();
-  if(remote()){[fixeds,logs,monthTotals]=await Promise.all([rpc('list_fixed',{p_code:dev.code}),rpc('recent_log',{p_code:dev.code,p_limit:40}).catch(()=>[]),rpc('month_totals',{p_code:dev.code}).catch(()=>[])]);monthTotals=monthTotals||[];fixeds=fixeds||[];logs=logs||[];setSync('ok')}else setSync('local');
+  if(remote()){[fixeds,logs,monthTotals]=await Promise.all([rpc('list_fixed',{p_code:dev.code}),rpc('recent_log',{p_code:dev.code,p_limit:40}).catch(()=>[]),rpc('month_cat_totals',{p_code:dev.code}).catch(()=>[])]);monthCat=monthTotals||[];monthTotals=foldMonths(monthCat);fixeds=fixeds||[];logs=logs||[];setSync('ok')}else setSync('local');
   if(manual)toast('새로고침 완료')}
  catch(e){setSync('err',e.message);if(manual)alert('불러오기 실패: '+e.message)}
  finally{loading=false;
   if(again||+view!==v0){refresh();return}
   // 바뀐 게 없으면 다시 그리지 않음 (넘긴 직후 화면이 한 번 더 깜빡이는 것 방지)
   const sig=JSON.stringify([txs.length,txs.slice(0,3).map(x=>x.id+x.amount+x.at),monthTx(view).reduce((a,x)=>a+ +x.amount+(x.memo||'').length,0),fixeds.length,logs[0]&&logs[0].id,monthTotals.length,config]);
-  if(manual||sig!==lastSig||!sliding&&!dragging){if(sig!==lastSig||manual)renderAll();else renderLast()}lastSig=sig}}
+  if(dragging||sliding){pendingRender=true;lastSig=sig;return}  // 끄는 중엔 다시 그리지 않음 (손가락 아래 요소가 바뀌면 터치가 끊겨 화면이 중간에 멈춤)
+  if(sig!==lastSig||manual)renderAll();else renderLast();lastSig=sig}}
 
 // ── 공통 UI
 let toastT;
@@ -332,24 +335,23 @@ function renderList(p){let m=monthTx(view);if(!catFilter){const fc=fixedCard();i
  const g={};m.forEach(x=>(g[dKey(x.at)]=g[dKey(x.at)]||[]).push(x));
  Object.keys(g).sort().reverse().forEach(k=>{p.append(dayHead(k,g[k]),...g[k].map(txRow))})}
 function svgEl(w,hh,inner){const s=document.createElementNS('http://www.w3.org/2000/svg','svg');s.setAttribute('viewBox',`0 0 ${w} ${hh}`);s.setAttribute('width','100%');s.innerHTML=inner;return s}
-// 지금까지 전체 합계 (모든 달)
-function allTotals(){let rows=(monthTotals||[]).map(r=>({m:String(r.m).slice(0,7),o:+r.out_sum||0,i:+r.in_sum||0,f:+r.fixed_sum||0}));
- if(!remote()){const g={};LS.get('bg_tx',[]).forEach(x=>{const k=dKey(x.at).slice(0,7);g[k]=g[k]||{m:k,o:0,i:0,f:0};g[k][x.kind==='out'?'o':'i']+= +x.amount;if(x.fixed_id&&x.kind==='out')g[k].f+= +x.amount});rows=Object.values(g)}
- rows=rows.filter(r=>r.o||r.i).sort((a,b)=>a.m<b.m?-1:1);
- const o=rows.reduce((a,r)=>a+r.o,0),i=rows.reduce((a,r)=>a+r.i,0),f=rows.reduce((a,r)=>a+r.f,0);
- return {rows,o,i,f,from:rows[0]&&rows[0].m,to:rows.length&&rows[rows.length-1].m,n:rows.length}}
-function totalCard(){const t=allTotals();if(!t.n)return null;const ym=k=>k.slice(2,4)+'.'+(+k.slice(5,7));
- return h('div',{class:'sec',onclick:openTotal},h('h3',{},h('span',{},'💰 지금까지 총 지출'),h('small',{style:'color:var(--sub);font-weight:500'},`${ym(t.from)}~${ym(t.to)} · ${t.n}개월 ›`)),
-  h('div',{style:'font-size:24px;font-weight:800;letter-spacing:-.5px'},won(t.o)),
-  h('div',{class:'sm',style:'display:flex;gap:12px;flex-wrap:wrap;font-size:13px;color:var(--sub);margin-top:4px'},
-   h('span',{},'🔁 고정 ',h('b',{style:'color:var(--txt)'},won(t.f))),h('span',{},'변동 ',h('b',{style:'color:var(--txt)'},won(t.o-t.f))),h('span',{},'월 평균 ',h('b',{style:'color:var(--txt)'},won(t.o/t.n))),t.i?h('span',{},'수입 ',h('b',{style:'color:var(--in)'},won(t.i))):''))}
-function openTotal(){const t=allTotals();if(!t.n)return;
- sheet('💰 지금까지 총 지출',h('div',{},
-  h('div',{style:'font-size:28px;font-weight:800;margin:2px 0 4px'},won(t.o)),
-  h('div',{class:'hint',style:'margin-top:0'},`${t.from.replace('-','년 ')}월 ~ ${t.to.replace('-','년 ')}월 · ${t.n}개월 · 월 평균 ${won(t.o/t.n)}\n고정 ${won(t.f)} · 변동 ${won(t.o-t.f)}`+(t.i?` · 수입 ${won(t.i)}`:'')),
+// 지금까지 총 생활비 (모든 달, 설정에서 고른 카테고리(기본: 대출·저축)는 빼고)
+function allTotals(){const ex=new Set(config.lifeExclude||[]);let rows=(monthCat||[]).map(r=>({m:String(r.m).slice(0,7),cat:r.cat,o:+r.out_sum||0,i:+r.in_sum||0,f:+r.fixed_sum||0}));
+ if(!remote()){const g={};LS.get('bg_tx',[]).forEach(x=>{const k=dKey(x.at).slice(0,7)+'|'+x.cat;g[k]=g[k]||{m:k.slice(0,7),cat:x.cat,o:0,i:0,f:0};g[k][x.kind==='out'?'o':'i']+= +x.amount;if(x.fixed_id&&x.kind==='out')g[k].f+= +x.amount});rows=Object.values(g)}
+ const mo={},exBy={};let life=0,fx=0,inc=0;
+ rows.forEach(r=>{const a=mo[r.m]=mo[r.m]||{m:r.m,life:0,f:0,ex:0,i:0};a.i+=r.i;inc+=r.i;
+  if(ex.has(r.cat)){a.ex+=r.o;exBy[r.cat]=(exBy[r.cat]||0)+r.o}else{a.life+=r.o;a.f+=r.f;life+=r.o;fx+=r.f}});
+ const ms=Object.values(mo).filter(r=>r.life||r.i||r.ex).sort((a,b)=>a.m<b.m?-1:1);
+ return {rows:ms,life,f:fx,i:inc,exBy,n:ms.length,from:ms[0]&&ms[0].m,to:ms.length&&ms[ms.length-1].m}}
+function totalCard(){return h('button',{class:'btn w',style:'margin-bottom:12px;text-align:left;display:flex;align-items:center;gap:8px',onclick:openTotal},h('span',{style:'flex:1'},'💰 지금까지 총 생활비 보기'),h('span',{style:'color:var(--sub)'},'›'))}
+function openTotal(){const t=allTotals();if(!t.n){toast('아직 기록이 없어요');return}const ym=k=>k.slice(0,4)+'년 '+(+k.slice(5,7))+'월';
+ const exTxt=Object.entries(t.exBy).filter(([,v])=>v).map(([c,v])=>C(c).name+' '+won(v)).join(' · ');
+ sheet('💰 지금까지 총 생활비',h('div',{},
+  h('div',{style:'font-size:28px;font-weight:800;margin:2px 0 4px'},won(t.life)),
+  h('div',{class:'hint',style:'margin-top:0'},`${ym(t.from)} ~ ${ym(t.to)} · ${t.n}개월 · 월 평균 ${won(t.life/t.n)}\n고정 ${won(t.f)} · 변동 ${won(t.life-t.f)}`+(t.i?` · 수입 ${won(t.i)}`:'')+(exTxt?`\n빼고 계산: ${exTxt}`:'')),
   ...[...t.rows].reverse().map(r=>h('div',{class:'crow',onclick:()=>{closeSheet();view=new Date(r.m+'-01T00:00:00');calSel=null;statDay=null;refreshView()}},
-   h('div',{class:'nm'},h('b',{},`${r.m.slice(0,4)}년 ${+r.m.slice(5,7)}월`),h('small',{},`고정 ${won(r.f)} · 변동 ${won(r.o-r.f)}`+(r.i?` · 수입 ${won(r.i)}`:''))),h('span',{class:'amt'},won(r.o)),h('span',{style:'color:var(--sub)'},' ›')))),
-  [h('button',{class:'btn pri',onclick:closeSheet},'닫기')])}
+   h('div',{class:'nm'},h('b',{},ym(r.m)),h('small',{},`고정 ${won(r.f)} · 변동 ${won(r.life-r.f)}`+(r.ex?` · 뺀 것 ${won(r.ex)}`:'')+(r.i?` · 수입 ${won(r.i)}`:''))),h('span',{class:'amt'},won(r.life)),h('span',{style:'color:var(--sub)'},' ›')))),
+  [h('button',{class:'btn',onclick:()=>{closeSheet();tab='settings';LS.set('bg_tab',tab);renderTab();setTimeout(()=>{const el=document.getElementById('lifeSec');el&&el.scrollIntoView({behavior:'smooth'})},50)}},'뺄 항목 설정'),h('button',{class:'btn pri',onclick:closeSheet},'닫기')])}
 function renderStats(p){const m=monthTx(view),out=m.filter(x=>x.kind==='out'),tot=sumK(m,'out');
  {const tc=totalCard();if(tc)p.append(tc)}
  // 카테고리별
@@ -541,6 +543,9 @@ function renderSettings(p){
   fs.append(h('button',{class:'btn w',style:'margin-top:8px',onclick:()=>openFixed(null)},'＋ 고정지출 추가'))}
  p.append(fs);
  // 카테고리
+ {const exs=new Set(config.lifeExclude||[]);const ls=sec('총 생활비 계산',h('div',{class:'hint',style:'margin-top:0'},'통계 → "지금까지 총 생활비"에서 뺄 카테고리를 골라요 (두 폰 공통)'),
+  h('div',{class:'chips'},visCats('out').map(c=>h('button',{class:'chip'+(exs.has(c.id)?' on':''),onclick:async()=>{exs.has(c.id)?exs.delete(c.id):exs.add(c.id);config.lifeExclude=[...exs];try{await saveConfig()}catch(e){alert(e.message)}renderTab()}},(exs.has(c.id)?'✕ ':'')+c.emoji+' '+c.name))),
+  h('div',{class:'hint'},exs.size?'✕ 표시된 카테고리는 빼고 계산해요':'모든 지출을 더해요'));ls.id='lifeSec';p.append(ls)}
  p.append(renderCatEditor());
  // 알림
  const ps=h('div',{class:'hint'},'확인 중…');pushState().then(t=>ps.textContent=t);
@@ -659,10 +664,12 @@ function moveMonth(n){view=addM(view,n);catFilter=null;calSel=null;statDay=null;
 function goNow(){view=mStart(new Date());calSel=null;statDay=null;refreshView()}
 document.querySelectorAll('#kseg button').forEach(b=>b.onclick=()=>{kindSel=b.dataset.k;renderCats()});
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;LS.set('bg_tab',tab);if(tab!=='list')catFilter=null;renderTab()});
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){if(!sliding){setX(0,0);clearPreviews();dragging=false}refresh()}});
 setInterval(()=>{if(!document.hidden&&!document.querySelector('.sheet-bg')&&!dragging&&!sliding)refresh()},30000);
 // 스와이프로 달 이동: 지난달·다음달 화면이 양옆에 붙어 있어 손가락을 따라 같이 움직임
 // 부드럽게: 옆 달 화면은 미리(쉬는 시간에) 만들어 두고, 움직임은 GPU 이동(translate3d)만, 화면 갱신은 프레임마다 한 번
+let pendingRender=false;
+function afterSlide(){if(pendingRender){pendingRender=false;renderAll()}}
 let sliding=false,dragging=false,pvReady=false,pvVer=0,pvCache=null,prepT=null;
 function makePreviews(){const keep={view,calSel,statDay,catFilter},live=$('#pg');
  const box=h('div',{style:`position:absolute;left:-9999px;top:0;width:${live.offsetWidth}px;visibility:hidden`}),sb=live.cloneNode(true);box.append(sb);document.body.prepend(box);
@@ -682,10 +689,11 @@ function clearPreviews(){['#pgL','#pgR'].forEach(q=>{const el=$(q);el.replaceChi
 const gap=()=>{const r=$('#pgR');return r&&r.offsetLeft>0?r.offsetLeft:$('#track').offsetWidth+12};
 function setX(x,anim){const t=$('#track');t.style.transition=anim?`transform ${anim}ms cubic-bezier(.22,.7,.3,1)`:'none';t.style.transform=x?`translate3d(${x}px,0,0)`:''}
 function land(n,ms){sliding=true;setX(n>0?-gap():gap(),ms);
- setTimeout(()=>{requestAnimationFrame(()=>{moveMonth(n);setX(0,0);clearPreviews();sliding=false})},ms+20)}
+ setTimeout(()=>{requestAnimationFrame(()=>{pendingRender=false;moveMonth(n);setX(0,0);clearPreviews();sliding=false})},ms+20)}
 function slideMonth(n){if(sliding)return;buildPreviews();requestAnimationFrame(()=>land(n,280))}
 {let sx=null,sy=null,dx=0,mode=null,t0=0,raf=0,lx=0,lt=0,vx=0;
- document.addEventListener('touchstart',e=>{if(sliding||document.querySelector('.sheet-bg')||tab==='settings'||(e.target.closest&&e.target.closest('.hscroll,.hs,.topbar'))){sx=null;return}
+ document.addEventListener('touchstart',e=>{if(!sliding&&($('#track').style.transform||pvReady)){setX(0,0);clearPreviews();dragging=false;afterSlide()}  // 중간에 멈춘 화면 복구
+  if(sliding||document.querySelector('.sheet-bg')||tab==='settings'||(e.target.closest&&e.target.closest('.hscroll,.hs,.topbar'))){sx=null;return}
   sx=e.touches[0].clientX;sy=e.touches[0].clientY;dx=0;mode=null;t0=lt=Date.now();lx=sx;vx=0},{passive:true});
  document.addEventListener('touchmove',e=>{if(sx==null)return;const cx=e.touches[0].clientX,x=cx-sx,y=e.touches[0].clientY-sy;
   if(!mode){if(Math.abs(x)<8&&Math.abs(y)<8)return;mode=Math.abs(x)>Math.abs(y)*1.2?'h':'v';if(mode==='h'){dragging=true;buildPreviews();sx+=x>0?8:-8}}
@@ -694,7 +702,7 @@ function slideMonth(n){if(sliding)return;buildPreviews();requestAnimationFrame((
  const end=()=>{if(sx==null)return;sx=null;if(mode!=='h')return;dragging=false;if(raf){cancelAnimationFrame(raf);raf=0}
   const fling=Math.abs(vx)>.4&&Math.sign(vx)===Math.sign(dx);
   if(Math.abs(dx)>window.innerWidth*.3||(Math.abs(dx)>30&&fling)){const rest=gap()-Math.abs(dx);land(dx<0?1:-1,Math.max(140,Math.min(300,rest/Math.max(Math.abs(vx),1.2))))}
-  else{setX(0,220);setTimeout(clearPreviews,230)}};
+  else{sliding=true;setX(0,220);setTimeout(()=>{clearPreviews();setX(0,0);sliding=false;afterSlide()},230)}};
  document.addEventListener('touchend',end,{passive:true});document.addEventListener('touchcancel',end,{passive:true})}
 renderAll();(async()=>{try{if(remote())await loadConfig()}catch(e){setSync('err',e.message)}refresh()})();swReg();
 </script>

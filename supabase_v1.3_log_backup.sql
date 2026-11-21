@@ -288,3 +288,19 @@ begin
 end $$;
 grant execute on function public.month_totals(text) to anon, authenticated;
 notify pgrst, 'reload schema';
+
+-- v1.3.9: 카테고리별 월합계 (총 생활비 계산 — 앱에서 대출·저축 등 빼고 합산)
+create or replace function public.month_cat_totals(p_code text)
+returns table (m date, cat text, out_sum bigint, in_sum bigint, fixed_sum bigint)
+language plpgsql security definer set search_path = public as $$
+begin
+  perform _chk(p_code);
+  return query
+    select date_trunc('month', t.at at time zone 'Asia/Seoul')::date, t.cat,
+           coalesce(sum(t.amount) filter (where t.kind = 'out'), 0)::bigint,
+           coalesce(sum(t.amount) filter (where t.kind = 'in'), 0)::bigint,
+           coalesce(sum(t.amount) filter (where t.kind = 'out' and t.fixed_id is not null), 0)::bigint
+      from tx t group by 1, 2 order by 1, 2;
+end $$;
+grant execute on function public.month_cat_totals(text) to anon, authenticated;
+notify pgrst, 'reload schema';
