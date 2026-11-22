@@ -151,7 +151,7 @@ window.addEventListener('unhandledrejection',e=>{const b=document.getElementById
 </div><div id="pgL" class="pv"></div><div id="pgR" class="pv"></div></div>
 <div id="toast"></div>
 <script>
-const APP_VERSION='v1.3.9';
+const APP_VERSION='v1.3.10';
 const DEFAULT_CATS=[
  {"id": "food", "emoji": "🍽️", "name": "식비", "color": "#5CC88A", "kind": "out", "subs": ["외식", "배달", "장보기", "카페·간식", "술"]},
  {"id": "daily", "emoji": "🛒", "name": "생필품", "color": "#EE8F5A", "kind": "out", "subs": ["마트", "생활용품", "온라인쇼핑"]},
@@ -440,19 +440,22 @@ function renderStats(p){const m=monthTx(view),out=m.filter(x=>x.kind==='out'),to
  const who={};out.forEach(x=>{const k=x.created_by||'(이름 없음)';who[k]=(who[k]||0)+ +x.amount});
  if(Object.keys(who).length)p.append(h('div',{class:'sec'},h('h3',{},h('span',{},'기록한 사람별 지출')),
   ...Object.entries(who).sort((a,b)=>b[1]-a[1]).map(([k,v])=>h('div',{class:'crow'},h('div',{class:'nm'},h('b',{},k==='자동'?'🔁 고정지출 (자동)':k)),h('span',{class:'amt'},won(v)),h('small',{style:'color:var(--sub);width:38px;text-align:right'},Math.round(v/tot*100)+'%')))))}
+const calMode=()=>LS.get('bg_calmode','today');
 function renderCal(p){const n=dim(view),first=new Date(view.getFullYear(),view.getMonth(),1).getDay(),m=monthTx(view);
  const by={};m.forEach(x=>{const k=new Date(x.at).getDate();by[k]=by[k]||{o:0,i:0,f:0};by[k][x.kind==='out'?'o':'i']+= +x.amount;if(x.fixed_id)by[k].f++});
  const grid=h('div',{class:'cal'},WD.map((w,i)=>h('div',{class:'wd '+(i===0?'sun':i===6?'sat':'')},w)));
  for(let i=0;i<first;i++)grid.append(h('div',{class:'d x'}));
- const today=new Date();
+ const today=new Date();const isCurM=sameM(view,today);
+ // 달력 아래 내역: today=처음엔 오늘(이번 달만) / month=처음엔 달 전체 / popup=날짜 누르면 팝업 (폰별 설정 bg_calmode)
+ const effSel=calMode()==='popup'||calSel==='all'?null:(calSel??(calMode()==='today'&&isCurM?today.getDate():null));
  for(let d=1;d<=n;d++){const b=by[d],wd=(first+d-1)%7,isT=sameM(view,today)&&d===today.getDate();
-  const isS=calSel===d;grid.append(h('div',{class:'d'+(isT?' t':'')+(isS?' sel':''),onclick:()=>{calSel=calSel===d?null:d;renderTab()}},h('span',{class:'n '+(wd===0?'sun':wd===6?'sat':'')},d),
+  const isS=effSel===d;grid.append(h('div',{class:'d'+(isT?' t':'')+(isS?' sel':''),onclick:()=>{if(calMode()==='popup'){openDay(new Date(view.getFullYear(),view.getMonth(),d));return}calSel=effSel===d?(calMode()==='today'?'all':null):d;renderTab()}},h('span',{class:'n '+(wd===0?'sun':wd===6?'sat':'')},d),
    b&&b.o?h('span',{class:'o'},'-'+short(b.o)):null,b&&b.i?h('span',{class:'i'},'+'+short(b.i)):null,b&&b.f?h('span',{class:'f'},'🔁'+b.f):null))}
  const out=sumK(m,'out'),days=Object.values(by).filter(x=>x.o&&x.o>0).length;
  p.append(h('div',{class:'sec',style:'padding:8px;margin-bottom:0'},grid));
  // 달력 아래 내역: 날짜를 고르면 그날만, 아니면 그 달 전체 (같은 날 다시 누르면 전체로)
- if(calSel&&calSel<=n){const sd=new Date(view.getFullYear(),view.getMonth(),calSel),k=dKey(sd),arr=m.filter(x=>dKey(x.at)===k).sort((a,b)=>new Date(a.at)-new Date(b.at));
-  p.append(h('div',{class:'calday'},h('div',{class:'calhd'},h('span',{},''),h('button',{class:'chip ghost',style:'padding:4px 10px;font-size:12px',onclick:()=>{calSel=null;renderTab()}},'달 전체 보기')),
+ if(effSel&&effSel<=n){const sd=new Date(view.getFullYear(),view.getMonth(),effSel),k=dKey(sd),arr=m.filter(x=>dKey(x.at)===k).sort((a,b)=>new Date(a.at)-new Date(b.at));
+  p.append(h('div',{class:'calday'},h('div',{class:'calhd'},h('span',{},''),h('button',{class:'chip ghost',style:'padding:4px 10px;font-size:12px',onclick:()=>{calSel='all';renderTab()}},'달 전체 보기')),
    dayHead(k,arr),arr.length?arr.map(txRow):h('div',{class:'empty',style:'padding:14px'},'이 날은 기록이 없어요'),
    h('div',{style:'display:flex;gap:8px;margin-top:6px'},h('button',{class:'btn',style:'flex:1',onclick:()=>openTx({kind:'in',date:sd})},'💰 이 날 수입 추가'),h('button',{class:'btn pri',style:'flex:1',onclick:()=>openTx({kind:'out',date:sd})},'💸 이 날 지출 추가'))))}
  else{const g={};m.forEach(x=>(g[dKey(x.at)]=g[dKey(x.at)]||[]).push(x));const ks=Object.keys(g).sort().reverse();
@@ -561,6 +564,7 @@ function renderSettings(p){
   h('div',{class:'hint'},'알림은 사파리 → 공유 → "홈 화면에 추가"로 설치한 앱에서만 돼요 (iOS 16.4 이상).')));
  // 화면/데이터
  const th=LS.get('bg_theme','dark');
+ p.append(sec('달력',h('div',{class:'sublbl',style:'margin-top:0'},'날짜를 누르면 (이 폰만)'),h('div',{class:'chips'},[['today','아래에 그날 내역 · 처음엔 오늘'],['month','아래에 그날 내역 · 처음엔 달 전체'],['popup','팝업 창으로']].map(([k,l])=>h('button',{class:'chip'+(calMode()===k?' on':''),onclick:()=>{LS.set('bg_calmode',k);calSel=null;renderTab();toast('저장됨')}},l)))));
  p.append(sec('화면',h('label',{class:'tgl'},h('input',{type:'checkbox',checked:LS.get('bg_sort',true)!==false,onchange:e=>{LS.set('bg_sort',e.target.checked);renderCats();toast(e.target.checked?'입력창 카테고리: 자주 쓴 순서':'입력창 카테고리: 설정 순서')}}),'입력창 위 카테고리 줄을 최근 60일 자주 쓴 순서로 (이 폰만)'),h('div',{class:'chips'},[['dark','🌙 다크'],['light','☀️ 라이트'],['auto','자동']].map(([k,l])=>h('button',{class:'chip'+(th===k?' on':''),onclick:()=>{LS.set('bg_theme',k);applyTheme();renderTab()}},l))),
   h('button',{class:'btn w',onclick:async()=>{const v=prompt('앱 제목',config.title);if(v&&v.trim()){config.title=v.trim();try{await saveConfig()}catch(e){alert(e.message)}renderAll()}}},`제목 바꾸기 (${config.title})`)));
  if(remote())p.append(backupSec());
