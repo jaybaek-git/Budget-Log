@@ -108,7 +108,7 @@ html.lock,html.lock body{overflow:hidden}
 .cal .d .n{font-size:12px;font-weight:700}.cal .d.t{border-color:var(--acc);background:var(--today)}
 .cal .d .o{color:var(--out);font-weight:600;white-space:nowrap}.cal .d .i{color:var(--in);font-weight:600;white-space:nowrap}
 .cal .d.x{background:none}
-.sun{color:#ff6b6b}.sat{color:#5b8def}
+.sun{color:#ff6b6b}.sat{color:#5b8def}.shift{color:var(--sub);font-size:11px;font-weight:400}
 svg text{font-family:inherit}
 .tgl{display:flex;align-items:center;gap:8px;margin:8px 0}.tgl input{width:22px;height:22px}
 .cr{display:flex;gap:6px;align-items:center;margin:4px 0;font-size:12px}.cr code{flex:1;background:var(--inp);padding:5px 7px;border-radius:6px;word-break:break-all}
@@ -151,7 +151,7 @@ window.addEventListener('unhandledrejection',e=>{const b=document.getElementById
 </div><div id="pgL" class="pv"></div><div id="pgR" class="pv"></div></div>
 <div id="toast"></div>
 <script>
-const APP_VERSION='v1.3.10';
+const APP_VERSION='v1.4';
 const DEFAULT_CATS=[
  {"id": "food", "emoji": "🍽️", "name": "식비", "color": "#5CC88A", "kind": "out", "subs": ["외식", "배달", "장보기", "카페·간식", "술"]},
  {"id": "daily", "emoji": "🛒", "name": "생필품", "color": "#EE8F5A", "kind": "out", "subs": ["마트", "생활용품", "온라인쇼핑"]},
@@ -188,6 +188,12 @@ const mStart=d=>new Date(d.getFullYear(),d.getMonth(),1);
 const addM=(d,n)=>new Date(d.getFullYear(),d.getMonth()+n,1);
 const dim=d=>new Date(d.getFullYear(),d.getMonth()+1,0).getDate();
 const dKey=d=>{d=new Date(d);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())};
+// 공휴일 (서버 holidays 표, 폰에 캐시) — 고정지출 '다음 영업일' 계산·달력 빨간 날 표시
+let HOL=LS.get('bg_hol',{});
+const holName=d=>HOL[dKey(d)]||'';
+const isOff=d=>d.getDay()===0||d.getDay()===6||!!HOL[dKey(d)];
+const nextBiz=d=>{d=new Date(d);while(isOff(d))d.setDate(d.getDate()+1);return d};
+const offWhy=d=>holName(d)||(d.getDay()===0?'일요일':d.getDay()===6?'토요일':'');
 const sameM=(a,b)=>a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth();
 const uid=()=>crypto.randomUUID?crypto.randomUUID():'l'+Date.now().toString(36)+Math.random().toString(36).slice(2);
 
@@ -236,7 +242,7 @@ async function refresh(manual){
   const from=addM(view,-5),to=addM(view,2);txs=await store.list(from,to);
   if(sameM(view,new Date()))LS.set('bg_cache',txs);
   updateRank();
-  if(remote()){[fixeds,logs,monthTotals]=await Promise.all([rpc('list_fixed',{p_code:dev.code}),rpc('recent_log',{p_code:dev.code,p_limit:40}).catch(()=>[]),rpc('month_cat_totals',{p_code:dev.code}).catch(()=>[])]);monthCat=monthTotals||[];monthTotals=foldMonths(monthCat);fixeds=fixeds||[];logs=logs||[];setSync('ok')}else setSync('local');
+  if(remote()){[fixeds,logs,monthTotals]=await Promise.all([rpc('list_fixed',{p_code:dev.code}),rpc('recent_log',{p_code:dev.code,p_limit:40}).catch(()=>[]),rpc('month_cat_totals',{p_code:dev.code}).catch(()=>[])]);monthCat=monthTotals||[];monthTotals=foldMonths(monthCat);if(!refresh.hol){refresh.hol=1;rpc('list_holidays',{p_code:dev.code}).then(r=>{if(r&&r.length){const o={};r.forEach(x=>o[x.d]=x.name);HOL=o;LS.set('bg_hol',o)}}).catch(()=>{})}fixeds=fixeds||[];logs=logs||[];setSync('ok')}else setSync('local');
   if(manual)toast('새로고침 완료')}
  catch(e){setSync('err',e.message);if(manual)alert('불러오기 실패: '+e.message)}
  finally{loading=false;
@@ -317,15 +323,16 @@ function txRow(x){const c=C(x.cat);const d=new Date(x.at),fut=isFut(x);
   h('div',{class:'m'},h('div',{class:'t'},x.fixed_id?h('span',{class:'bdg f'},'고정'):'',fut?h('span',{class:'bdg p'},'예정'):'',x.memo||(c.name+(x.sub?' · '+x.sub:''))),h('div',{class:'u'},[x.memo?c.name+(x.sub?' · '+x.sub:''):null,x.created_by&&x.created_by!=='자동'?x.created_by:null,x.fixed_id?null:pad(d.getHours())+':'+pad(d.getMinutes())].filter(Boolean).join(' · '))),
   h('div',{class:'amt '+x.kind},(x.kind==='in'?'+':'-')+won(+x.amount)))}
 function dayHead(k,arr){const d=new Date(k+'T00:00:00'),o=sumK(arr,'out'),i=sumK(arr,'in');
- return h('div',{class:'dh'},h('span',{class:d.getDay()===0?'sun':d.getDay()===6?'sat':''},`${d.getMonth()+1}월 ${d.getDate()}일 (${WD[d.getDay()]})`),h('span',{},[i?'+'+won(i):null,o?'-'+won(o):null].filter(Boolean).join('  ')))}
+ return h('div',{class:'dh'},h('span',{class:d.getDay()===0||holName(d)?'sun':d.getDay()===6?'sat':''},`${d.getMonth()+1}월 ${d.getDate()}일 (${WD[d.getDay()]})${holName(d)?' '+holName(d):''}`),h('span',{},[i?'+'+won(i):null,o?'-'+won(o):null].filter(Boolean).join('  ')))}
 function fixedCard(){const m=monthTx(view),rows=m.filter(x=>x.fixed_id).sort((a,b)=>new Date(a.at)-new Date(b.at));
  const skipped=sameM(view,new Date())?fixeds.filter(f=>f.skipped):[];if(!rows.length&&!skipped.length)return null;
  const out=rows.filter(x=>x.kind==='out'),tot=out.reduce((a,x)=>a+ +x.amount,0),done=out.filter(x=>!isFut(x)).reduce((a,x)=>a+ +x.amount,0);
  const open=LS.get('bg_fxopen',true);
  const card=h('div',{class:'fxcard'},h('div',{class:'hd',onclick:()=>{LS.set('bg_fxopen',!open);renderTab()}},h('span',{},`🔁 ${view.getMonth()+1}월 고정지출 ${out.length}건`),h('b',{},won(tot)),h('span',{style:'flex:0;color:var(--sub);font-weight:400'},open?'▾':'▸')),
   h('div',{class:'hint',style:'margin:2px 0 0'},`나감 ${won(done)} · 예정 ${won(tot-done)}`+(rows.length>out.length?` · 고정수입 ${won(rows.filter(x=>x.kind==='in').reduce((a,x)=>a+ +x.amount,0))}`:'')));
- if(open){rows.forEach(x=>{const c=C(x.cat),fut=isFut(x);card.append(h('div',{class:'fxr'+(fut?' fut':''),onclick:()=>openTx({tx:x})},h('span',{class:'dd'},new Date(x.at).getDate()+'일'),h('span',{},c.emoji),
-   h('span',{class:'nm'},x.memo||c.name),fut?h('span',{class:'bdg p'},'예정'):h('span',{style:'color:#22C55E;font-size:12px'},'✓'),h('span',{class:'amt '+x.kind},(x.kind==='in'?'+':'-')+won(+x.amount))))});
+ if(open){rows.forEach(x=>{const c=C(x.cat),fut=isFut(x);const ff=fixeds.find(f=>f.id===x.fixed_id),xd=new Date(x.at),od=ff?new Date(xd.getFullYear(),xd.getMonth(),Math.min(ff.day,dim(xd))):null,sh=od&&od.getDate()!==xd.getDate();
+   card.append(h('div',{class:'fxr'+(fut?' fut':''),onclick:()=>openTx({tx:x})},h('span',{class:'dd'},xd.getDate()+'일'),h('span',{},c.emoji),
+   h('span',{class:'nm'},x.memo||c.name,sh?h('small',{class:'shift'},` ${od.getDate()}일 ${offWhy(od)} → ${WD[xd.getDay()]}`):''),fut?h('span',{class:'bdg p'},'예정'):h('span',{style:'color:#22C55E;font-size:12px'},'✓'),h('span',{class:'amt '+x.kind},(x.kind==='in'?'+':'-')+won(+x.amount))))});
   skipped.forEach(f=>{const c=C(f.cat);card.append(h('div',{class:'fxr skip',onclick:async()=>{if(confirm(`'${f.memo||c.name}' 이번 달 기록을 다시 넣을까요?`)){try{await rpc('unskip_fixed',{p_code:dev.code,p_id:f.id});await refresh()}catch(e){alert(e.message)}}}},h('span',{class:'dd'},f.day>=31?'말일':f.day+'일'),h('span',{},c.emoji),h('span',{class:'nm'},(f.memo||c.name)+' (이번 달 건너뜀)'),h('span',{class:'amt'},won(+f.amount))))})}
  return card}
 function renderList(p){let m=monthTx(view);if(!catFilter){const fc=fixedCard();if(fc)p.append(fc)}
@@ -449,7 +456,7 @@ function renderCal(p){const n=dim(view),first=new Date(view.getFullYear(),view.g
  // 달력 아래 내역: today=처음엔 오늘(이번 달만) / month=처음엔 달 전체 / popup=날짜 누르면 팝업 (폰별 설정 bg_calmode)
  const effSel=calMode()==='popup'||calSel==='all'?null:(calSel??(calMode()==='today'&&isCurM?today.getDate():null));
  for(let d=1;d<=n;d++){const b=by[d],wd=(first+d-1)%7,isT=sameM(view,today)&&d===today.getDate();
-  const isS=effSel===d;grid.append(h('div',{class:'d'+(isT?' t':'')+(isS?' sel':''),onclick:()=>{if(calMode()==='popup'){openDay(new Date(view.getFullYear(),view.getMonth(),d));return}calSel=effSel===d?(calMode()==='today'?'all':null):d;renderTab()}},h('span',{class:'n '+(wd===0?'sun':wd===6?'sat':'')},d),
+  const isS=effSel===d;grid.append(h('div',{class:'d'+(isT?' t':'')+(isS?' sel':''),onclick:()=>{if(calMode()==='popup'){openDay(new Date(view.getFullYear(),view.getMonth(),d));return}calSel=effSel===d?(calMode()==='today'?'all':null):d;renderTab()}},h('span',{class:'n '+(wd===0||holName(new Date(view.getFullYear(),view.getMonth(),d))?'sun':wd===6?'sat':'')},d),
    b&&b.o?h('span',{class:'o'},'-'+short(b.o)):null,b&&b.i?h('span',{class:'i'},'+'+short(b.i)):null,b&&b.f?h('span',{class:'f'},'🔁'+b.f):null))}
  const out=sumK(m,'out'),days=Object.values(by).filter(x=>x.o&&x.o>0).length;
  p.append(h('div',{class:'sec',style:'padding:8px;margin-bottom:0'},grid));
@@ -505,7 +512,7 @@ function openTx(o){const ed=o.tx;let kind=ed?ed.kind:o.kind||kindSel,cat=ed?ed.c
  const del=async()=>{if(!confirm(ed.fixed_id?'이번 달 고정지출 기록을 지울까요?\n(이 달만 건너뛰고, 다음 달부터는 계속 기록돼요. 아예 끝내려면 "고정 설정"에서 종료일을 정하세요)':'이 기록을 지울까요?'))return;try{await store.del(ed.id);closeSheet();await refresh();
   if(ed.fixed_id){toast('이번 달 건너뜀 — 고정지출 카드에서 다시 넣을 수 있어요');return}toast('삭제됨',async()=>{await store.add({kind:ed.kind,cat:ed.cat,sub:ed.sub,amount:+ed.amount,memo:ed.memo,at:ed.at});await refresh()})}catch(e){alert(e.message)}};
  const fxf=ed&&ed.fixed_id?fixeds.find(x=>x.id===ed.fixed_id):null;
- const banner=ed&&ed.fixed_id?h('div',{class:'fxbanner'},h('span',{},'🔁 ',h('b',{},'고정지출'),fxf?` · 매달 ${fxf.day>=31?'말일':fxf.day+'일'} · ${fxf.end_month?'~'+fxf.end_month.slice(2,7).replace('-','.')+'까지':'계속'}`:''),fxf?h('button',{class:'chip',onclick:()=>openFixed(fxf)},'고정 설정'):''):null;
+ const banner=ed&&ed.fixed_id?h('div',{class:'fxbanner'},h('span',{},'🔁 ',h('b',{},'고정지출'),fxf?` · 매달 ${fxf.day>=31?'말일':fxf.day+'일'}${fxf.business_day?'(휴일이면 다음 영업일)':''} · ${fxf.end_month?'~'+fxf.end_month.slice(2,7).replace('-','.')+'까지':'계속'}`:''),fxf?h('button',{class:'chip',onclick:()=>openFixed(fxf)},'고정 설정'):''):null;
  sheet(head,h('div',{},banner,kindSw,catRow,subRow,ap.el,memoBox,dateBox,ed&&ed.created_by?h('div',{class:'hint'},`기록: ${ed.created_by}${ed.fixed_id?' (고정지출 자동 기록)':''}`):null),
   [ed?h('button',{class:'btn red',style:'flex:0 0 80px',onclick:del},'삭제'):null,h('button',{class:'btn pri',onclick:save},ed?'수정 저장':'저장')])}
 
@@ -540,7 +547,7 @@ function renderSettings(p){
  if(!remote())fs.append(h('div',{class:'hint'},'연결(동기화) 후에 쓸 수 있어요.'));
  else{if(!fixeds.length)fs.append(h('div',{class:'hint'},'월세·관리비·통신비·보험·구독료처럼 매달 나가는 돈을 넣어 두면 매달 1일에 그 달 것이 미리(예정) 기록돼요.'));
   fixeds.forEach(f=>{const c=C(f.cat);fs.append(h('div',{class:'fx'+(f.active?'':' off'),onclick:()=>openFixed(f)},h('span',{class:'dd'},f.day>=31?'말일':f.day+'일'),h('span',{style:'font-size:18px'},c.emoji),
-   h('div',{class:'nm',style:'flex:1;min-width:0'},h('b',{},f.memo||c.name),h('div',{class:'hint',style:'margin:0'},[c.name+(f.sub?'·'+f.sub:''),f.end_month?'~'+f.end_month.slice(2,7).replace('-','.'):'계속',f.active?null:'꺼짐'].filter(Boolean).join(' · '))),h('span',{class:'amt '+f.kind},(f.kind==='in'?'+':'-')+won(+f.amount))))});
+   h('div',{class:'nm',style:'flex:1;min-width:0'},h('b',{},f.memo||c.name),h('div',{class:'hint',style:'margin:0'},[c.name+(f.sub?'·'+f.sub:''),f.end_month?'~'+f.end_month.slice(2,7).replace('-','.'):'계속',f.business_day?'휴일이면 다음 영업일':null,f.active?null:'꺼짐'].filter(Boolean).join(' · '))),h('span',{class:'amt '+f.kind},(f.kind==='in'?'+':'-')+won(+f.amount))))});
   const tf=fixeds.filter(f=>f.active&&f.kind==='out').reduce((a,f)=>a+ +f.amount,0);
   if(tf)fs.append(h('div',{class:'hint',style:'text-align:right'},`매달 고정지출 합계 ${won(tf)}`));
   fs.append(h('button',{class:'btn w',style:'margin-top:8px',onclick:()=>openFixed(null)},'＋ 고정지출 추가'))}
@@ -612,7 +619,7 @@ function editCat(c){const box=h('div',{});
   h('button',{class:'btn w',style:'margin-top:10px',onclick:async()=>{if(confirm(`'${c.name}' 버튼을 숨길까요? (기존 기록은 그대로 남아요)`)){c.hidden=true;await saveConfig().catch(e=>alert(e.message));closeSheet();renderAll()}}},'이 카테고리 숨기기'));
  draw();sheet(`${c.emoji} ${c.name}`,box,[h('button',{class:'btn pri',onclick:closeSheet},'완료')])}
 function openFixed(f){const cm=dKey(mStart(new Date())).slice(0,7);
- let kind=f?f.kind:'out',cat=f?f.cat:(visCats('out').find(c=>c.id==='util')||visCats('out')[0]).id,sub=f?f.sub||'':'',memo=f?f.memo||'':'',day=f?f.day:new Date().getDate(),active=f?f.active:true;
+ let kind=f?f.kind:'out',cat=f?f.cat:(visCats('out').find(c=>c.id==='util')||visCats('out')[0]).id,sub=f?f.sub||'':'',memo=f?f.memo||'':'',day=f?f.day:new Date().getDate(),active=f?f.active:true,biz=f?!!f.business_day:false;
  let start=f&&f.start_month?f.start_month.slice(0,7):cm,end=f&&f.end_month?f.end_month.slice(0,10):'';
  const ap=amountPad(f?+f.amount:0);const catRow=h('div',{class:'hs'}),subRow=h('div',{}),memoRow=h('div',{}),seg=h('div',{class:'seg',style:'margin:0 0 6px'}),endRow=h('div',{});
  const drawSeg=()=>seg.replaceChildren(...['out','in'].map(k=>h('button',{class:k===kind?'a '+(k==='out'?'o':'i'):'',onclick:()=>{kind=k;if(C(cat).kind!==k){cat=(visCats(k)[0]||{}).id;sub=''}drawSeg();drawCats();drawSub()}},k==='out'?'💸 지출':'💰 수입')));
@@ -627,17 +634,24 @@ function openFixed(f){const cm=dKey(mStart(new Date())).slice(0,7);
   [...Array(31)].map((_,i)=>h('option',{value:i+1,selected:i+1===day},i+1===31?'매달 말일 (31일)':`매달 ${i+1}일`)));
  const st=h('input',{type:'month',value:start,style:'width:100%;background:var(--inp);border:1px solid var(--line);border-radius:8px;padding:8px;font-size:16px',onchange:e=>{if(e.target.value)start=e.target.value}});
  const act=h('input',{type:'checkbox',checked:active,onchange:e=>active=e.target.checked});
+ const bizHint=h('div',{class:'hint',style:'margin-top:0'});
+ const drawBiz=()=>{if(!biz){bizHint.textContent='카드 결제 구독처럼 휴일에도 그날 나가면 끄세요.';return}
+  const now=new Date(),ex=[];for(let k=0;k<12&&ex.length<2;k++){const m=new Date(now.getFullYear(),now.getMonth()+k,1),o=new Date(m.getFullYear(),m.getMonth(),Math.min(day,dim(m))),n2=nextBiz(o);if(+n2!==+o)ex.push(`${o.getMonth()+1}/${o.getDate()}(${offWhy(o)}) → ${n2.getMonth()+1}/${n2.getDate()}(${WD[n2.getDay()]})`)}
+  bizHint.textContent=ex.length?'예: '+ex.join(', '):'앞으로 1년간 이 날짜는 모두 평일이에요.'};
+ const bizCb=h('input',{type:'checkbox',checked:biz,onchange:e=>{biz=e.target.checked;drawBiz()}});drawBiz();
+ ds.addEventListener('change',drawBiz);
  const save=async()=>{const amount=ap.get();if(!(amount>0)){alert('금액을 입력해 주세요');return}if(end&&end.slice(0,7)<start){alert('끝나는 날이 시작보다 앞이에요');return}
-  const args={p_code:dev.code,p_id:f?f.id:null,p_kind:kind,p_amount:amount,p_cat:cat,p_sub:sub||null,p_day:day,p_memo:memo||null,p_start:start+'-01',p_end:end||null,p_active:active,p_by:dev.who||null};
+  const args={p_code:dev.code,p_id:f?f.id:null,p_kind:kind,p_amount:amount,p_cat:cat,p_sub:sub||null,p_day:day,p_memo:memo||null,p_start:start+'-01',p_end:end||null,p_active:active,p_by:dev.who||null,p_biz:biz};
   const inst=f?txs.find(x=>x.fixed_id===f.id&&sameM(new Date(x.at),new Date())):null;
-  const changed=f&&(kind!==f.kind||cat!==f.cat||(sub||'')!==(f.sub||'')||amount!==+f.amount||(memo||'')!==(f.memo||'')||day!==f.day);
+  const changed=f&&(kind!==f.kind||cat!==f.cat||(sub||'')!==(f.sub||'')||amount!==+f.amount||(memo||'')!==(f.memo||'')||day!==f.day||biz!==!!f.business_day);
   try{if(inst&&changed){const sc=await choose('🔁 변경을 어떻게 적용할까요?',[['from','이번 달부터 계속','이번 달 기록도 바뀌고 앞으로 매달 이렇게'],['only','이번 달만','이번 달 기록만 바꾸고 고정 설정은 그대로']]);if(!sc)return;
-    if(sc==='only'){const d=new Date(inst.at),dd=Math.min(day,dim(d));await store.update({id:inst.id,kind,cat,sub,amount,memo:memo||C(cat).name,at:new Date(d.getFullYear(),d.getMonth(),dd,9).toISOString()});closeSheet();await refresh();toast('이번 달만 바꿨어요');return}}
+    if(sc==='only'){const d=new Date(inst.at),dd=Math.min(day,dim(d));let nd=new Date(d.getFullYear(),d.getMonth(),dd,9);if(biz)nd=nextBiz(nd);await store.update({id:inst.id,kind,cat,sub,amount,memo:memo||C(cat).name,at:nd.toISOString()});closeSheet();await refresh();toast('이번 달만 바꿨어요');return}}
    await rpc('save_fixed',args);closeSheet();await refresh();toast(f?'🔁 저장됨':'🔁 추가됨 — 이번 달 것도 기록했어요')}catch(e){alert(e.message)}};
  sheet(f?'🔁 고정 항목':'🔁 고정지출 추가',h('div',{},seg,catRow,subRow,memoRow,ap.el,
   h('div',{class:'fld'},h('span',{},'매달 나가는 날'),ds),
   h('div',{style:'display:flex;gap:8px'},h('div',{class:'fld',style:'flex:1'},h('span',{},'시작 달'),st)),
   h('div',{class:'sublbl'},'언제까지'),endRow,
+  h('label',{class:'tgl'},bizCb,'주말·공휴일이면 다음 영업일에 기록'),bizHint,
   h('label',{class:'tgl'},act,'자동 기록 켜기'),
   h('div',{class:'hint'},'이번 달 것은 날짜가 안 됐어도 바로 "예정"으로 기록돼요.')),
   [f?h('button',{class:'btn red',style:'flex:0 0 80px',onclick:async()=>{if(!confirm('이 고정 항목을 지울까요?\n(지난 기록은 남고, 아직 안 된 예정 기록은 지워져요. 끝나는 날만 정하려면 "언제까지"를 쓰세요)'))return;try{await rpc('delete_fixed',{p_code:dev.code,p_id:f.id,p_by:dev.who||null});closeSheet();await refresh()}catch(e){alert(e.message)}}},'삭제'):null,

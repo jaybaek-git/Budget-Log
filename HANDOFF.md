@@ -1,7 +1,7 @@
 # 가계부(Budget-Log) 인수인계 메모
 
 > 새 대화에서: "jaybaek-git/Budget-Log 의 HANDOFF.md 먼저 읽고 시작해 줘"
-> 마지막 버전: **v1.3.10** (2026-11-22) — Baby-Log 구조를 그대로 따라 만듦
+> 마지막 버전: **v1.4** (2026-11-23) — Baby-Log 구조를 그대로 따라 만듦
 
 ## 1. 무엇
 - 부부 공유 가계부 웹앱 (PWA). https://jaybaek-git.github.io/Budget-Log/ (GitHub Pages, `main` 루트)
@@ -28,7 +28,9 @@
 - 무료 플랜 활성 프로젝트 2개 제한 → Baby-Log와 이 프로젝트 2개 사용 중
 - 테이블: `tx`(kind, amount, cat, **sub**, at, memo, created_by, fixed_id), `fixed`(day, last_month …), `app_config`, `app_secret`(가족 코드·VAPID), `app_state`(edge_url, 예산 알림 단계), `push_subs`, `push_queue`
 - RLS 켜고 직접 접근 막음 → `SECURITY DEFINER` RPC + `_chk(가족코드)`
-- RPC: add_tx, update_tx(p_by), delete_tx(p_by), list_tx, import_tx, recent_log, month_totals, backup_now, list_backups, restore_backup, unskip_fixed, get_config, set_config, list_fixed, save_fixed, delete_fixed, save_push_sub, delete_push_sub, get_vapid_public, test_push
+- 테이블 `holidays`(d, name): 공휴일 2026~2027 (우주항공청 월력요항). **해마다 6월 말쯤 다음 해 공휴일을 추가해야 함**
+- `fixed.business_day`: 켜면 주말·공휴일일 때 다음 영업일에 기록 (`_next_bizday`, `_fixed_day(f, m)`)
+- RPC: list_holidays, add_tx, update_tx(p_by), delete_tx(p_by), list_tx, import_tx, recent_log, month_totals, backup_now, list_backups, restore_backup, unskip_fixed, get_config, set_config, list_fixed, save_fixed, delete_fixed, save_push_sub, delete_push_sub, get_vapid_public, test_push
 - 트리거 `_tx_notify`: 이번 달 기록이면 상대방 알림(본인 제외) + 예산 80/100% 알림(달마다 1번씩)
 - pg_cron `budget-log-fixed`: 매일 00:05 KST `_run_fixed()` — 그 달 고정 항목을 날짜와 상관없이 모두 기록(tx.fixed_id+fixed_month 유일), 건너뛴 달(fixed_skip) 제외. 1일에 한 번 요약 알림
 - 알림: `_push()` → push_queue → pg_net → Edge Function `push` (verify_jwt=false)
@@ -44,6 +46,7 @@
 - 할부, 월 시작일(월급날 기준) 설정, 연간 통계
 
 ## 6. 버전 기록
+- v1.4 (11/23) 고정지출 "주말·공휴일이면 다음 영업일" 항목별 선택(supabase_v1.4_bizday.sql: holidays 표, fixed.business_day, save_fixed p_biz, list_fixed·list_holidays). 계좌이체 항목 켬, 카드 구독(쿠팡·아이클라우드) 끔. 9~11월 기존 기록 날짜도 옮김(10/10→10/12, 11/21→11/23). 고정 카드에 "21일 토요일 → 월" 표시, 달력·날짜 머리에 공휴일 빨간색
 - v1.0 (11/19) 첫 버전 / v1.0.1 화면 오류 표시
 - v1.3.10 (11/22) 달력 아래 내역 방식 폰별 선택(설정 → 달력, bg_calmode): today=이번 달은 처음에 오늘 내역(기본) / month=처음엔 달 전체 / popup=날짜 누르면 팝업. 다른 달은 처음에 달 전체, "달 전체 보기"=calSel 'all'
 - v1.3.9 (11/21) 슬라이드 중 화면이 중간에 멈추는 버그 수정(끄는 중 서버 응답으로 다시 그리면 터치가 끊김 → 끄는 중엔 그리기 보류, 멈춘 상태면 다음 터치·앱 복귀 때 복구) / "지금까지 총 생활비"를 통계 맨 위 작은 버튼 → 창으로, 설정 "총 생활비 계산"에서 뺄 카테고리(config.lifeExclude, 기본 대출·저축) / month_cat_totals RPC / 포르쉐파이낸셜 6건 대출 → 자동차·할부
@@ -71,6 +74,8 @@
 - 11월 삼성카드분 입력 완료 (삼성전자 3건은 친구 물건이라 삭제). 네이버페이·쿠팡 건별 카테고리는 확인 대기
 
 ## 8. 등록된 고정지출 (2026-08 시작, 종료 없음 — 8~11월 모두 기록됨)
+- 휴일이면 다음 영업일(business_day): 계좌이체 항목 전부 켬(승재보험×2·승재통신비·승재회비·승재청약저축·연금저축·동행조합비), 쿠팡구독·아이클라우드구독(카드)은 끔
+- 11/22 사용자가 직접 추가: 21일 동행조합비 5,000(회비), 11월부터
 - 7일 쿠팡구독 7,890(통신비·구독) / 10일 승재보험 32,400(보험) / 14일 아이클라우드구독 11,100(통신비·구독) / 16일 승재통신비 47,940(통신비·휴대폰)
 - 21일 승재청약저축 50,000(저축·청약), 승재보험 184,582(보험), 연금저축 380,000(저축·연금), 승재회비 50,000(회비·모임)
 - 11/7 카드 명세서의 쿠팡 와우 7,890은 쿠팡구독 고정 기록으로 연결함 (중복 아님). 21일 4건·10/14/16일 건은 계좌이체라 카드 명세서에 안 나옴 (사용자 확인). 쿠팡구독만 카드 — 명세서 입력 때 겹치면 빼기
