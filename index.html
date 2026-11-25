@@ -115,7 +115,7 @@ svg text{font-family:inherit}
 .ver{text-align:center;color:var(--sub2);font-size:11px;margin-top:10px}
 .fx{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}.fx:last-of-type{border:0}
 .fx .dd{width:42px;text-align:center;font-size:12px;color:var(--sub);font-weight:700}
-.fx.off{opacity:.45}.fx{cursor:pointer}.fxb{flex:0 0 34px;height:34px;border:1px solid var(--line);background:var(--inp);border-radius:8px;font-size:15px;padding:0;color:inherit}.fxb.del{margin-left:-2px}
+.fx.off{opacity:.45}.swr{position:relative;overflow:hidden;border-bottom:1px solid var(--line)}.swr:last-of-type{border:0}.swr .fx.off{opacity:1}.swr .fx.off>*{opacity:.45}.swr .fx{border:0;background:var(--card);position:relative;z-index:1;touch-action:pan-y}.swa{position:absolute;right:0;top:0;bottom:0;width:144px;display:flex}.swa button{flex:1;border:0;color:#fff;font-size:13px;font-weight:700;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}.swa .e{background:#5b8def}.swa .d{background:#ef4444}.fx{cursor:pointer}.fxb{flex:0 0 34px;height:34px;border:1px solid var(--line);background:var(--inp);border-radius:8px;font-size:15px;padding:0;color:inherit}.fxb.del{margin-left:-2px}
 #track{position:relative;touch-action:pan-y;will-change:transform}
 .pv{position:absolute;top:0;width:100%;overflow:hidden;pointer-events:none;display:none}#pgL{left:calc(-100% - 12px)}#pgR{left:calc(100% + 12px)}
 .li.fix{box-shadow:inset 3px 0 0 #8A87C9}.li.fut{opacity:.62}
@@ -151,7 +151,7 @@ window.addEventListener('unhandledrejection',e=>{const b=document.getElementById
 </div><div id="pgL" class="pv"></div><div id="pgR" class="pv"></div></div>
 <div id="toast"></div>
 <script>
-const APP_VERSION='v1.4.1';
+const APP_VERSION='v1.4.2';
 const DEFAULT_CATS=[
  {"id": "food", "emoji": "🍽️", "name": "식비", "color": "#5CC88A", "kind": "out", "subs": ["외식", "배달", "장보기", "카페·간식", "술"]},
  {"id": "daily", "emoji": "🛒", "name": "생필품", "color": "#EE8F5A", "kind": "out", "subs": ["마트", "생활용품", "온라인쇼핑"]},
@@ -546,10 +546,11 @@ function renderSettings(p){
  const fs=sec(h('span',{},'고정지출·수입 자동 기록'));
  if(!remote())fs.append(h('div',{class:'hint'},'연결(동기화) 후에 쓸 수 있어요.'));
  else{if(!fixeds.length)fs.append(h('div',{class:'hint'},'월세·관리비·통신비·보험·구독료처럼 매달 나가는 돈을 넣어 두면 매달 1일에 그 달 것이 미리(예정) 기록돼요.'));
-  fixeds.forEach(f=>{const c=C(f.cat);fs.append(h('div',{class:'fx'+(f.active?'':' off'),role:'button',onclick:()=>openFixed(f)},h('span',{class:'dd'},f.day>=31?'말일':f.day+'일'),h('span',{style:'font-size:18px'},c.emoji),
+  fixeds.forEach(f=>{const c=C(f.cat);fs.append(swipeRow(h('div',{class:'fx'+(f.active?'':' off'),role:'button',onclick:()=>openFixed(f)},h('span',{class:'dd'},f.day>=31?'말일':f.day+'일'),h('span',{style:'font-size:18px'},c.emoji),
    h('div',{class:'nm',style:'flex:1;min-width:0'},h('b',{},f.memo||c.name),h('div',{class:'hint',style:'margin:0'},[c.name+(f.sub?'·'+f.sub:''),f.end_month?'~'+f.end_month.slice(2,7).replace('-','.'):'계속',f.business_day?'휴일→영업일':null,f.active?null:'꺼짐'].filter(Boolean).join(' · '))),h('span',{class:'amt '+f.kind},(f.kind==='in'?'+':'-')+won(+f.amount)),
    h('button',{class:'fxb',onclick:e=>{e.stopPropagation();openFixed(f)}},'✏️'),
-   h('button',{class:'fxb del',onclick:e=>{e.stopPropagation();delFixed(f)}},'🗑')))});
+   h('button',{class:'fxb del',onclick:e=>{e.stopPropagation();delFixed(f)}},'🗑')),()=>openFixed(f),()=>delFixed(f)))});
+  if(fixeds.length)fs.append(h('div',{class:'hint',style:'margin:4px 0 0'},'← 항목을 왼쪽으로 밀어도 편집·삭제할 수 있어요'));
   const tf=fixeds.filter(f=>f.active&&f.kind==='out').reduce((a,f)=>a+ +f.amount,0);
   if(tf)fs.append(h('div',{class:'hint',style:'text-align:right'},`매달 고정지출 합계 ${won(tf)}`));
   fs.append(h('button',{class:'btn w',style:'margin-top:8px',onclick:()=>openFixed(null)},'＋ 고정지출 추가'))}
@@ -620,6 +621,21 @@ function editCat(c){const box=h('div',{});
    h('button',{class:'chip ghost',onclick:async()=>{const v=prompt('추가할 세부 항목 (여러 개는 쉼표로: 외식, 배달)');if(!v)return;v.split(/[,，]/).map(t=>t.trim()).filter(Boolean).forEach(t=>{if(!c.subs.includes(t))c.subs.push(t)});await up()}},'＋ 추가')),
   h('button',{class:'btn w',style:'margin-top:10px',onclick:async()=>{if(confirm(`'${c.name}' 버튼을 숨길까요? (기존 기록은 그대로 남아요)`)){c.hidden=true;await saveConfig().catch(e=>alert(e.message));closeSheet();renderAll()}}},'이 카테고리 숨기기'));
  draw();sheet(`${c.emoji} ${c.name}`,box,[h('button',{class:'btn pri',onclick:closeSheet},'완료')])}
+// 왼쪽으로 밀면 편집/삭제 버튼이 드러나는 줄 (iOS 메일처럼). 한 번에 하나만 열림
+let swOpen=null;
+function swipeRow(front,onEdit,onDel){const W=144;
+ const wrap=h('div',{class:'swr'},h('div',{class:'swa'},h('button',{class:'e',onclick:()=>{close();onEdit()}},h('span',{style:'font-size:18px'},'✏️'),h('span',{},'편집')),h('button',{class:'d',onclick:()=>{close();onDel()}},h('span',{style:'font-size:18px'},'🗑'),h('span',{},'삭제'))),front);
+ front.classList.add('swf');let x0=0,y0=0,base=0,dx=0,mode=null,open=false;
+ const set=(v,an)=>{front.style.transition=an?'transform .2s ease':'none';front.style.transform=`translate3d(${v}px,0,0)`};
+ const close=()=>{open=false;set(0,1);if(swOpen===api)swOpen=null};const api={close};
+ front.addEventListener('touchstart',e=>{const t=e.touches[0];x0=t.clientX;y0=t.clientY;base=open?-W:0;dx=0;mode=null;if(swOpen&&swOpen!==api)swOpen.close()},{passive:true});
+ front.addEventListener('touchmove',e=>{const t=e.touches[0],mx=t.clientX-x0,my=t.clientY-y0;
+  if(!mode){if(Math.abs(mx)<8&&Math.abs(my)<8)return;mode=Math.abs(mx)>Math.abs(my)?'h':'v'}
+  if(mode!=='h')return;e.preventDefault();dx=mx;let v=base+dx;if(v>0)v=v/4;if(v<-W)v=-W+(v+W)/4;set(v,0)},{passive:false});
+ front.addEventListener('touchend',()=>{if(mode!=='h')return;const v=base+dx;open=v<-W/2;set(open?-W:0,1);if(open)swOpen=api;else if(swOpen===api)swOpen=null},{passive:true});
+ // 열려 있을 때 줄을 누르면 편집 대신 닫기 / 밀고 난 직후의 click 무시
+ front.addEventListener('click',e=>{if(open||mode==='h'){e.stopPropagation();e.preventDefault();if(open&&mode!=='h')close();mode=null}},true);
+ return wrap}
 async function delFixed(f,after){const c=C(f.cat);if(!confirm(`'${f.memo||c.name}' 고정 항목을 지울까요?\n(지난 기록은 남고, 아직 안 된 예정 기록은 지워져요. 끝나는 날만 정하려면 ✏️ 편집 → "언제까지"를 쓰세요)`))return;
  try{await rpc('delete_fixed',{p_code:dev.code,p_id:f.id,p_by:dev.who||null});after&&after();await refresh();toast('🗑 지웠어요')}catch(e){alert(e.message)}}
 function openFixed(f){const cm=dKey(mStart(new Date())).slice(0,7);
