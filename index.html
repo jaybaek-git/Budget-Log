@@ -115,7 +115,7 @@ svg text{font-family:inherit}
 .ver{text-align:center;color:var(--sub2);font-size:11px;margin-top:10px}
 .fx{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}.fx:last-of-type{border:0}
 .fx .dd{width:42px;text-align:center;font-size:12px;color:var(--sub);font-weight:700}
-.fx.off{opacity:.45}
+.fx.off{opacity:.45}.fx{cursor:pointer}.fxb{flex:0 0 34px;height:34px;border:1px solid var(--line);background:var(--inp);border-radius:8px;font-size:15px;padding:0;color:inherit}.fxb.del{margin-left:-2px}
 #track{position:relative;touch-action:pan-y;will-change:transform}
 .pv{position:absolute;top:0;width:100%;overflow:hidden;pointer-events:none;display:none}#pgL{left:calc(-100% - 12px)}#pgR{left:calc(100% + 12px)}
 .li.fix{box-shadow:inset 3px 0 0 #8A87C9}.li.fut{opacity:.62}
@@ -151,7 +151,7 @@ window.addEventListener('unhandledrejection',e=>{const b=document.getElementById
 </div><div id="pgL" class="pv"></div><div id="pgR" class="pv"></div></div>
 <div id="toast"></div>
 <script>
-const APP_VERSION='v1.4';
+const APP_VERSION='v1.4.1';
 const DEFAULT_CATS=[
  {"id": "food", "emoji": "🍽️", "name": "식비", "color": "#5CC88A", "kind": "out", "subs": ["외식", "배달", "장보기", "카페·간식", "술"]},
  {"id": "daily", "emoji": "🛒", "name": "생필품", "color": "#EE8F5A", "kind": "out", "subs": ["마트", "생활용품", "온라인쇼핑"]},
@@ -546,8 +546,10 @@ function renderSettings(p){
  const fs=sec(h('span',{},'고정지출·수입 자동 기록'));
  if(!remote())fs.append(h('div',{class:'hint'},'연결(동기화) 후에 쓸 수 있어요.'));
  else{if(!fixeds.length)fs.append(h('div',{class:'hint'},'월세·관리비·통신비·보험·구독료처럼 매달 나가는 돈을 넣어 두면 매달 1일에 그 달 것이 미리(예정) 기록돼요.'));
-  fixeds.forEach(f=>{const c=C(f.cat);fs.append(h('div',{class:'fx'+(f.active?'':' off'),onclick:()=>openFixed(f)},h('span',{class:'dd'},f.day>=31?'말일':f.day+'일'),h('span',{style:'font-size:18px'},c.emoji),
-   h('div',{class:'nm',style:'flex:1;min-width:0'},h('b',{},f.memo||c.name),h('div',{class:'hint',style:'margin:0'},[c.name+(f.sub?'·'+f.sub:''),f.end_month?'~'+f.end_month.slice(2,7).replace('-','.'):'계속',f.business_day?'휴일이면 다음 영업일':null,f.active?null:'꺼짐'].filter(Boolean).join(' · '))),h('span',{class:'amt '+f.kind},(f.kind==='in'?'+':'-')+won(+f.amount))))});
+  fixeds.forEach(f=>{const c=C(f.cat);fs.append(h('div',{class:'fx'+(f.active?'':' off'),role:'button',onclick:()=>openFixed(f)},h('span',{class:'dd'},f.day>=31?'말일':f.day+'일'),h('span',{style:'font-size:18px'},c.emoji),
+   h('div',{class:'nm',style:'flex:1;min-width:0'},h('b',{},f.memo||c.name),h('div',{class:'hint',style:'margin:0'},[c.name+(f.sub?'·'+f.sub:''),f.end_month?'~'+f.end_month.slice(2,7).replace('-','.'):'계속',f.business_day?'휴일→영업일':null,f.active?null:'꺼짐'].filter(Boolean).join(' · '))),h('span',{class:'amt '+f.kind},(f.kind==='in'?'+':'-')+won(+f.amount)),
+   h('button',{class:'fxb',onclick:e=>{e.stopPropagation();openFixed(f)}},'✏️'),
+   h('button',{class:'fxb del',onclick:e=>{e.stopPropagation();delFixed(f)}},'🗑')))});
   const tf=fixeds.filter(f=>f.active&&f.kind==='out').reduce((a,f)=>a+ +f.amount,0);
   if(tf)fs.append(h('div',{class:'hint',style:'text-align:right'},`매달 고정지출 합계 ${won(tf)}`));
   fs.append(h('button',{class:'btn w',style:'margin-top:8px',onclick:()=>openFixed(null)},'＋ 고정지출 추가'))}
@@ -618,6 +620,8 @@ function editCat(c){const box=h('div',{});
    h('button',{class:'chip ghost',onclick:async()=>{const v=prompt('추가할 세부 항목 (여러 개는 쉼표로: 외식, 배달)');if(!v)return;v.split(/[,，]/).map(t=>t.trim()).filter(Boolean).forEach(t=>{if(!c.subs.includes(t))c.subs.push(t)});await up()}},'＋ 추가')),
   h('button',{class:'btn w',style:'margin-top:10px',onclick:async()=>{if(confirm(`'${c.name}' 버튼을 숨길까요? (기존 기록은 그대로 남아요)`)){c.hidden=true;await saveConfig().catch(e=>alert(e.message));closeSheet();renderAll()}}},'이 카테고리 숨기기'));
  draw();sheet(`${c.emoji} ${c.name}`,box,[h('button',{class:'btn pri',onclick:closeSheet},'완료')])}
+async function delFixed(f,after){const c=C(f.cat);if(!confirm(`'${f.memo||c.name}' 고정 항목을 지울까요?\n(지난 기록은 남고, 아직 안 된 예정 기록은 지워져요. 끝나는 날만 정하려면 ✏️ 편집 → "언제까지"를 쓰세요)`))return;
+ try{await rpc('delete_fixed',{p_code:dev.code,p_id:f.id,p_by:dev.who||null});after&&after();await refresh();toast('🗑 지웠어요')}catch(e){alert(e.message)}}
 function openFixed(f){const cm=dKey(mStart(new Date())).slice(0,7);
  let kind=f?f.kind:'out',cat=f?f.cat:(visCats('out').find(c=>c.id==='util')||visCats('out')[0]).id,sub=f?f.sub||'':'',memo=f?f.memo||'':'',day=f?f.day:new Date().getDate(),active=f?f.active:true,biz=f?!!f.business_day:false;
  let start=f&&f.start_month?f.start_month.slice(0,7):cm,end=f&&f.end_month?f.end_month.slice(0,10):'';
@@ -654,7 +658,7 @@ function openFixed(f){const cm=dKey(mStart(new Date())).slice(0,7);
   h('label',{class:'tgl'},bizCb,'주말·공휴일이면 다음 영업일에 기록'),bizHint,
   h('label',{class:'tgl'},act,'자동 기록 켜기'),
   h('div',{class:'hint'},'이번 달 것은 날짜가 안 됐어도 바로 "예정"으로 기록돼요.')),
-  [f?h('button',{class:'btn red',style:'flex:0 0 80px',onclick:async()=>{if(!confirm('이 고정 항목을 지울까요?\n(지난 기록은 남고, 아직 안 된 예정 기록은 지워져요. 끝나는 날만 정하려면 "언제까지"를 쓰세요)'))return;try{await rpc('delete_fixed',{p_code:dev.code,p_id:f.id,p_by:dev.who||null});closeSheet();await refresh()}catch(e){alert(e.message)}}},'삭제'):null,
+  [f?h('button',{class:'btn red',style:'flex:0 0 80px',onclick:()=>delFixed(f,closeSheet)},'삭제'):null,
    h('button',{class:'btn pri',onclick:save},'저장')])}
 function exportCsv(){const rows=[['날짜','시간','구분','카테고리','세부','금액','메모','기록자']];
  [...txs].sort((a,b)=>new Date(a.at)-new Date(b.at)).forEach(x=>{const d=new Date(x.at);rows.push([dKey(d),pad(d.getHours())+':'+pad(d.getMinutes()),x.kind==='out'?'지출':'수입',C(x.cat).name,x.sub||'',x.amount,x.memo||'',x.created_by||''])});
